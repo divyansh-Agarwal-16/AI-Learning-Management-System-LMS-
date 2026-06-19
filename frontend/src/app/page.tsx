@@ -1,100 +1,105 @@
-import Image from "next/image";
+// This page renders the landing view of the LMS, highlighting core AI tutoring features and action buttons.
+import Link from "next/link";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const features = [
+    {
+      title: "AI Tutor",
+      description: "Receive personalized, real-time guidance and tutoring mapped to your learning pace and interests.",
+      icon: "🤖",
+    },
+    {
+      title: "Smart Quizzes",
+      description: "Test your knowledge with dynamically generated quizzes that adapt in difficulty to match your level.",
+      icon: "📝",
+    },
+    {
+      title: "Adaptive Paths",
+      description: "Follow customized curriculum paths designed specifically to address your academic and skill gaps.",
+      icon: "🎯",
+    },
+    {
+      title: "Progress Tracking",
+      description: "Monitor milestones and track detailed analytics of your cognitive progress and subject mastery.",
+      icon: "📈",
+    },
+  ];
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-indigo-500 selection:text-white font-sans">
+      {/* Header Navigation */}
+      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+          <Link href="/" className="text-xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent hover:opacity-90 transition-opacity">
+            ai-lms
+          </Link>
+          <div className="flex gap-4">
+            <Link href="/login" className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors">
+              Sign In
+            </Link>
+            <Link href="/signup" className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-lg hover:shadow-indigo-500/20 transition-all">
+              Sign Up
+            </Link>
+          </div>
         </div>
+      </header>
+
+      {/* Hero Section */}
+      <main className="flex-1 flex flex-col justify-center py-20 px-6 max-w-7xl mx-auto w-full">
+        <div className="text-center max-w-3xl mx-auto mb-20">
+          <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-6 bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent">
+            Learn Anything with Your Personal AI Tutor
+          </h1>
+          <p className="text-lg md:text-xl text-slate-400 mb-8 max-w-2xl mx-auto leading-relaxed">
+            Experience next-generation education powered by RAG technology, multi-agent cognitive orchestration, and personalized feedback.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link href="/signup" className="px-8 py-3 text-base font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-lg hover:shadow-indigo-500/30 transition-all transform hover:-translate-y-0.5">
+              Get Started
+            </Link>
+            <Link href="/login" className="px-8 py-3 text-base font-semibold border border-slate-800 hover:bg-slate-900 text-slate-300 hover:text-white rounded-lg transition-all transform hover:-translate-y-0.5">
+              View Demo
+            </Link>
+          </div>
+        </div>
+
+        {/* Features Section */}
+        <section id="features" className="py-10 border-t border-slate-900">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+              Engineered for Accelerating Knowledge
+            </h2>
+            <p className="text-slate-400 max-w-lg mx-auto">
+              Our autonomous learning engine coordinates multiple tools to optimize your educational experience.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {features.map((feature, idx) => (
+              <div 
+                key={idx} 
+                className="p-6 bg-slate-900/40 border border-slate-900 hover:border-slate-800 rounded-xl transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/[0.02] group"
+              >
+                <div className="text-3xl mb-4 bg-slate-800/50 w-12 h-12 flex items-center justify-center rounded-lg group-hover:scale-110 transition-transform">
+                  {feature.icon}
+                </div>
+                <h3 className="text-xl font-bold mb-2 text-slate-200 group-hover:text-white transition-colors">
+                  {feature.title}
+                </h3>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                  {feature.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-900 bg-slate-950 py-8 text-center text-sm text-slate-500">
+        <div className="max-w-7xl mx-auto px-6">
+          <p>© {new Date().getFullYear()} AI Learning Management System. All rights reserved.</p>
+        </div>
       </footer>
     </div>
   );
