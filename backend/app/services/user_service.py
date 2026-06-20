@@ -4,6 +4,7 @@ This module houses operations for reading profile details, updating profile fiel
 and storing user onboarding configurations.
 """
 
+import uuid
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -17,19 +18,25 @@ class UserService:
     """User profile management and onboarding business operations."""
 
     @staticmethod
-    async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
+    async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> Optional[User]:
         """Fetches a database User with profile and onboarding relations loaded.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Core user primary key ID.
+            user_id (uuid.UUID): Core user primary key ID.
 
         Returns:
             Optional[User]: User database object, or None if not found.
         """
+        if isinstance(user_id, str):
+            try:
+                user_id = uuid.UUID(user_id)
+            except ValueError:
+                return None
+
         result = await db.execute(
             select(User)
-            .where(User.id == user_id)
+            .where(User.id == user_id, User.is_deleted == False)
             .options(
                 selectinload(User.profile),
                 selectinload(User.onboarding)
@@ -40,25 +47,32 @@ class UserService:
     @staticmethod
     async def update_profile(
         db: AsyncSession,
-        user_id: int,
+        user_id: uuid.UUID,
         request: UpdateProfileRequest
     ) -> Optional[User]:
         """Modifies user profile fields.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Core user primary key ID.
+            user_id (uuid.UUID): Core user primary key ID.
             request (UpdateProfileRequest): Target modified fields.
 
         Returns:
             Optional[User]: The updated database User object.
         """
+        user_uuid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+
+        # Verify user exists and not deleted
+        user = await UserService.get_user_by_id(db, user_uuid)
+        if not user:
+            return None
+
         # Select target profile
-        result = await db.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+        result = await db.execute(select(UserProfile).where(UserProfile.user_id == user_uuid))
         profile = result.scalars().first()
         if not profile:
             # Create a profile if missing for some reason
-            profile = UserProfile(user_id=user_id)
+            profile = UserProfile(user_id=user_uuid)
             db.add(profile)
 
         # Apply profile fields if provided in request
@@ -70,28 +84,35 @@ class UserService:
             profile.avatar_url = request.avatar_url
 
         await db.commit()
-        return await UserService.get_user_by_id(db, user_id)
+        return await UserService.get_user_by_id(db, user_uuid)
 
     @staticmethod
     async def save_onboarding(
         db: AsyncSession,
-        user_id: int,
+        user_id: uuid.UUID,
         request: OnboardingRequest
     ) -> Optional[User]:
         """Saves user onboarding selections.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Core user primary key ID.
+            user_id (uuid.UUID): Core user primary key ID.
             request (OnboardingRequest): Onboarding selections.
 
         Returns:
             Optional[User]: The updated database User object.
         """
-        result = await db.execute(select(OnboardingData).where(OnboardingData.user_id == user_id))
+        user_uuid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+
+        # Verify user exists and not deleted
+        user = await UserService.get_user_by_id(db, user_uuid)
+        if not user:
+            return None
+
+        result = await db.execute(select(OnboardingData).where(OnboardingData.user_id == user_uuid))
         onboarding = result.scalars().first()
         if not onboarding:
-            onboarding = OnboardingData(user_id=user_id)
+            onboarding = OnboardingData(user_id=user_uuid)
             db.add(onboarding)
 
         onboarding.topic = request.topic
@@ -99,4 +120,4 @@ class UserService:
         onboarding.hours_per_week = request.hours_per_week
 
         await db.commit()
-        return await UserService.get_user_by_id(db, user_id)
+        return await UserService.get_user_by_id(db, user_uuid)

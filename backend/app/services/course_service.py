@@ -4,6 +4,7 @@ This module houses operations for listing courses, fetching course details,
 creating courses/lessons, handling student enrollments, and grading quizzes.
 """
 
+import uuid
 from typing import List, Optional
 from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,25 @@ from app.schemas.course import CourseCreate, LessonCreate
 from app.schemas.quiz import SubmitQuizRequest
 
 
+def to_uuid(val) -> Optional[uuid.UUID]:
+    """Helper utility converting strings or existing UUID objects to uuid.UUID.
+
+    Args:
+        val (Any): Input ID payload.
+
+    Returns:
+        Optional[uuid.UUID]: Parsed UUID object, or None if invalid.
+    """
+    if val is None:
+        return None
+    if isinstance(val, uuid.UUID):
+        return val
+    try:
+        return uuid.UUID(str(val))
+    except ValueError:
+        return None
+
+
 class CourseService:
     """Course catalog query, creation, and quiz business operations."""
 
@@ -26,7 +46,7 @@ class CourseService:
         search: Optional[str] = None,
         difficulty: Optional[str] = None
     ) -> List[Course]:
-        """Queries and filters courses from the database.
+        """Queries and filters active courses from the database.
 
         Args:
             db (AsyncSession): Active database session.
@@ -36,7 +56,7 @@ class CourseService:
         Returns:
             List[Course]: Filtered database Course list.
         """
-        stmt = select(Course).options(selectinload(Course.lessons))
+        stmt = select(Course).options(selectinload(Course.lessons)).where(Course.is_deleted == False)
         
         filters = []
         if search:
@@ -56,19 +76,23 @@ class CourseService:
         return list(result.scalars().all())
 
     @staticmethod
-    async def get_course_by_id(db: AsyncSession, course_id: str) -> Optional[Course]:
+    async def get_course_by_id(db: AsyncSession, course_id: uuid.UUID) -> Optional[Course]:
         """Fetches a detailed course with lessons preloaded.
 
         Args:
             db (AsyncSession): Active database session.
-            course_id (str): Reference Course slug ID.
+            course_id (uuid.UUID): Reference Course UUID.
 
         Returns:
             Optional[Course]: Detailed database Course, or None.
         """
+        course_uuid = to_uuid(course_id)
+        if not course_uuid:
+            return None
+
         result = await db.execute(
             select(Course)
-            .where(Course.id == course_id)
+            .where(Course.id == course_uuid, Course.is_deleted == False)
             .options(selectinload(Course.lessons))
         )
         return result.scalars().first()
@@ -84,12 +108,16 @@ class CourseService:
         Returns:
             Course: The registered Course database object.
         """
-        existing = await CourseService.get_course_by_id(db, request.id)
+        course_uuid = to_uuid(request.id) if request.id else uuid.uuid4()
+        if not course_uuid:
+            course_uuid = uuid.uuid4()
+
+        existing = await CourseService.get_course_by_id(db, course_uuid)
         if existing:
             return existing
 
         course = Course(
-            id=request.id,
+            id=course_uuid,
             title=request.title,
             description=request.description,
             difficulty=request.difficulty,
@@ -101,29 +129,37 @@ class CourseService:
         return course
 
     @staticmethod
-    async def create_lesson(db: AsyncSession, course_id: str, request: LessonCreate) -> Optional[Lesson]:
+    async def create_lesson(db: AsyncSession, course_id: uuid.UUID, request: LessonCreate) -> Optional[Lesson]:
         """Appends a new lesson to an existing Course catalog.
 
         Args:
             db (AsyncSession): Active database session.
-            course_id (str): Targeted Course slug ID.
+            course_id (uuid.UUID): Targeted Course UUID.
             request (LessonCreate): Values for lesson creation.
 
         Returns:
             Optional[Lesson]: Created database Lesson, or None if course doesn't exist.
         """
-        course = await CourseService.get_course_by_id(db, course_id)
+        course_uuid = to_uuid(course_id)
+        if not course_uuid:
+            return None
+
+        course = await CourseService.get_course_by_id(db, course_uuid)
         if not course:
             return None
 
-        res = await db.execute(select(Lesson).where(Lesson.id == request.id))
+        lesson_uuid = to_uuid(request.id) if request.id else uuid.uuid4()
+        if not lesson_uuid:
+            lesson_uuid = uuid.uuid4()
+
+        res = await db.execute(select(Lesson).where(Lesson.id == lesson_uuid))
         existing = res.scalars().first()
         if existing:
             return existing
 
         lesson = Lesson(
-            id=request.id,
-            course_id=course_id,
+            id=lesson_uuid,
+            course_id=course_uuid,
             title=request.title,
             duration=request.duration,
             videoUrl=request.videoUrl,
@@ -136,27 +172,32 @@ class CourseService:
         return lesson
 
     @staticmethod
-    async def enroll_user(db: AsyncSession, user_id: int, course_id: str) -> bool:
+    async def enroll_user(db: AsyncSession, user_id: uuid.UUID, course_id: uuid.UUID) -> bool:
         """Enrolls a student inside a Course catalog.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Core user referencing key ID.
-            course_id (str): Target Course slug ID.
+            user_id (uuid.UUID): Core user referencing key UUID.
+            course_id (uuid.UUID): Target Course UUID.
 
         Returns:
             bool: True if enrolled successfully, False otherwise.
         """
-        course = await CourseService.get_course_by_id(db, course_id)
+        user_uuid = to_uuid(user_id)
+        course_uuid = to_uuid(course_id)
+        if not user_uuid or not course_uuid:
+            return False
+
+        course = await CourseService.get_course_by_id(db, course_uuid)
         if not course:
             return False
 
-        is_enrolled = await CourseService.is_user_enrolled(db, user_id, course_id)
+        is_enrolled = await CourseService.is_user_enrolled(db, user_uuid, course_uuid)
         if is_enrolled:
             return True
 
-        enrollment = Enrollment(user_id=user_id, course_id=course_id)
-        progress = CourseProgress(user_id=user_id, course_id=course_id, percentage=0.0, status="in_progress")
+        enrollment = Enrollment(user_id=user_uuid, course_id=course_uuid)
+        progress = CourseProgress(user_id=user_uuid, course_id=course_uuid, percentage=0.0, status="in_progress")
         
         db.add(enrollment)
         db.add(progress)
@@ -164,58 +205,71 @@ class CourseService:
         return True
 
     @staticmethod
-    async def is_user_enrolled(db: AsyncSession, user_id: int, course_id: str) -> bool:
+    async def is_user_enrolled(db: AsyncSession, user_id: uuid.UUID, course_id: uuid.UUID) -> bool:
         """Verifies if a user is enrolled in a course.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Student User ID.
-            course_id (str): Target Course slug ID.
+            user_id (uuid.UUID): Student User UUID.
+            course_id (uuid.UUID): Target Course UUID.
 
         Returns:
             bool: True if enrolled, False otherwise.
         """
+        user_uuid = to_uuid(user_id)
+        course_uuid = to_uuid(course_id)
+        if not user_uuid or not course_uuid:
+            return False
+
         result = await db.execute(
             select(Enrollment)
-            .where(Enrollment.user_id == user_id, Enrollment.course_id == course_id)
+            .where(Enrollment.user_id == user_uuid, Enrollment.course_id == course_uuid)
         )
         return result.scalars().first() is not None
 
     @staticmethod
-    async def get_quiz_by_course(db: AsyncSession, course_id: str) -> Optional[Quiz]:
+    async def get_quiz_by_course(db: AsyncSession, course_id: uuid.UUID) -> Optional[Quiz]:
         """Fetches the practice quiz associated with a course.
 
         Args:
             db (AsyncSession): Active database session.
-            course_id (str): Reference Course slug ID.
+            course_id (uuid.UUID): Reference Course UUID.
 
         Returns:
             Optional[Quiz]: The associated Quiz database object, if exists.
         """
+        course_uuid = to_uuid(course_id)
+        if not course_uuid:
+            return None
+
         result = await db.execute(
             select(Quiz)
-            .where(Quiz.course_id == course_id)
+            .where(Quiz.course_id == course_uuid)
             .options(selectinload(Quiz.questions))
         )
         return result.scalars().first()
 
     @staticmethod
-    async def create_quiz(db: AsyncSession, course_id: str, title: str) -> Quiz:
+    async def create_quiz(db: AsyncSession, course_id: uuid.UUID, title: str) -> Quiz:
         """Registers a practice Quiz module.
 
         Args:
             db (AsyncSession): Active database session.
-            course_id (str): Reference Course slug ID.
+            course_id (uuid.UUID): Reference Course UUID.
             title (str): Quiz title.
 
         Returns:
             Quiz: The registered Quiz database object.
         """
-        existing = await CourseService.get_quiz_by_course(db, course_id)
+        course_uuid = to_uuid(course_id)
+        if not course_uuid:
+            return None
+
+        existing = await CourseService.get_quiz_by_course(db, course_uuid)
         if existing:
             return existing
 
-        quiz = Quiz(course_id=course_id, title=title)
+        quiz = Quiz(course_id=course_uuid, title=title)
         db.add(quiz)
         await db.commit()
         await db.refresh(quiz)
@@ -224,7 +278,7 @@ class CourseService:
     @staticmethod
     async def add_quiz_question(
         db: AsyncSession,
-        quiz_id: int,
+        quiz_id: uuid.UUID,
         text: str,
         options: List[str],
         correct_idx: int
@@ -233,7 +287,7 @@ class CourseService:
 
         Args:
             db (AsyncSession): Active database session.
-            quiz_id (int): Target quiz ID.
+            quiz_id (uuid.UUID): Target quiz UUID.
             text (str): Question prompt text.
             options (List[str]): Choices options.
             correct_idx (int): Correct index.
@@ -241,8 +295,12 @@ class CourseService:
         Returns:
             Question: The created database Question object.
         """
+        quiz_uuid = to_uuid(quiz_id)
+        if not quiz_uuid:
+            raise ValueError("Invalid quiz_id UUID specification")
+
         question = Question(
-            quiz_id=quiz_id,
+            quiz_id=quiz_uuid,
             text=text,
             options=options,
             correct_answer_idx=correct_idx
@@ -255,25 +313,30 @@ class CourseService:
     @staticmethod
     async def submit_quiz(
         db: AsyncSession,
-        user_id: int,
-        quiz_id: int,
+        user_id: uuid.UUID,
+        quiz_id: uuid.UUID,
         request: SubmitQuizRequest
     ) -> Optional[Submission]:
         """Grades, submits, and logs a practice quiz.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Core user referencing key ID.
-            quiz_id (int): Target graded quiz ID.
+            user_id (uuid.UUID): Core user referencing key UUID.
+            quiz_id (uuid.UUID): Target graded quiz UUID.
             request (SubmitQuizRequest): Student submitted answers.
 
         Returns:
             Optional[Submission]: Completed database Submission record, or None.
         """
+        user_uuid = to_uuid(user_id)
+        quiz_uuid = to_uuid(quiz_id)
+        if not user_uuid or not quiz_uuid:
+            return None
+
         # Fetch quiz and pre-load correct answers
         result = await db.execute(
             select(Quiz)
-            .where(Quiz.id == quiz_id)
+            .where(Quiz.id == quiz_uuid)
             .options(selectinload(Quiz.questions))
         )
         quiz = result.scalars().first()
@@ -290,8 +353,8 @@ class CourseService:
 
         # Create submission wrapper first
         submission = Submission(
-            user_id=user_id,
-            quiz_id=quiz_id,
+            user_id=user_uuid,
+            quiz_id=quiz_uuid,
             score=0,
             total_questions=total_questions
         )
@@ -299,14 +362,18 @@ class CourseService:
         await db.flush()  # Extract submission ID before child records are saved
 
         for ans in request.answers:
-            correct_idx = correct_map.get(ans.question_id)
+            ans_question_uuid = to_uuid(ans.question_id)
+            if not ans_question_uuid:
+                continue
+
+            correct_idx = correct_map.get(ans_question_uuid)
             if correct_idx is not None and ans.selected_option_idx == correct_idx:
                 score += 1
             
             # Record individual answer transaction
             db_answer = Answer(
                 submission_id=submission.id,
-                question_id=ans.question_id,
+                question_id=ans_question_uuid,
                 selected_option_idx=ans.selected_option_idx
             )
             answers_to_create.append(db_answer)
@@ -319,20 +386,25 @@ class CourseService:
         return submission
 
     @staticmethod
-    async def get_submissions(db: AsyncSession, user_id: int, quiz_id: int) -> List[Submission]:
+    async def get_submissions(db: AsyncSession, user_id: uuid.UUID, quiz_id: uuid.UUID) -> List[Submission]:
         """Fetches past quiz submissions for a user.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Student user ID.
-            quiz_id (int): Target quiz ID.
+            user_id (uuid.UUID): Student user UUID.
+            quiz_id (uuid.UUID): Target quiz UUID.
 
         Returns:
             List[Submission]: List of submissions.
         """
+        user_uuid = to_uuid(user_id)
+        quiz_uuid = to_uuid(quiz_id)
+        if not user_uuid or not quiz_uuid:
+            return []
+
         result = await db.execute(
             select(Submission)
-            .where(Submission.user_id == user_id, Submission.quiz_id == quiz_id)
+            .where(Submission.user_id == user_uuid, Submission.quiz_id == quiz_uuid)
             .order_by(Submission.submitted_at.desc())
         )
         return list(result.scalars().all())

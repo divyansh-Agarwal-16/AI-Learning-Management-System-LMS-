@@ -4,6 +4,7 @@ This module houses validation structures for reading user records, updating prof
 fields, and processing onboarding survey responses.
 """
 
+import uuid
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
@@ -42,14 +43,14 @@ class UserResponse(BaseModel):
     """Schema validating final returned User payload context.
 
     Attributes:
-        id (int): Primary User key ID.
+        id (uuid.UUID): Primary User key ID.
         email (EmailStr): Login address.
         role (str): Authorized user privilege tier.
         is_active (bool): Active session lock flag.
         profile (Optional[UserProfileSchema]): Display information.
         onboarding (Optional[OnboardingDataSchema]): Custom preferences.
     """
-    id: int
+    id: uuid.UUID
     email: EmailStr
     role: str
     is_active: bool
@@ -83,4 +84,3 @@ class OnboardingRequest(BaseModel):
     topic: str = Field(..., description="Target discipline topic (e.g. Programming)")
     level: str = Field(..., description="Syllabus skill difficulty (Beginner, Intermediate, Advanced)")
     hours_per_week: float = Field(..., ge=0.0, le=168.0, description="Hours studied weekly")
-Account: str = "Demo User"

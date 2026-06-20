@@ -5,6 +5,7 @@ generating daily study schedules, and suggesting dynamic learning paths.
 All routes are rate-limited to 10 requests per minute per user.
 """
 
+import uuid
 import structlog
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +54,7 @@ logger = structlog.get_logger()
 async def chat(
     request: Request,
     body: ChatRequest,
-    course_id: str,
+    course_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -62,7 +63,7 @@ async def chat(
     Args:
         request (Request): Mandatory request parameter for slowapi.
         body (ChatRequest): Prompts query input details.
-        course_id (str): Reference Course slug ID.
+        course_id (uuid.UUID): Reference Course UUID.
         current_user (User): Graded User session.
         db (AsyncSession): Active database session.
 

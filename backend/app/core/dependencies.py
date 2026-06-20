@@ -4,6 +4,7 @@ This module houses injection dependencies for yielding active database
 sessions and resolving/validating user contexts for protected routes.
 """
 
+import uuid
 from typing import AsyncGenerator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -63,8 +64,13 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
+    try:
+        uuid_user_id = uuid.UUID(user_id)
+    except ValueError:
+        raise credentials_exception
+
     # Query user database entry asynchronously
-    result = await db.execute(select(User).where(User.id == int(user_id)))
+    result = await db.execute(select(User).where(User.id == uuid_user_id, User.is_deleted == False))
     user = result.scalars().first()
     if user is None:
         raise credentials_exception

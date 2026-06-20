@@ -4,6 +4,7 @@ This module exposes endpoints for tracking individual lesson milestones and
 retrieving cumulative course completion percentages.
 """
 
+import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +21,7 @@ logger = structlog.get_logger()
 
 @router.post("/lessons/{lesson_id}", response_model=ApiResponse[LessonProgressResponse])
 async def track_lesson(
-    lesson_id: str,
+    lesson_id: uuid.UUID,
     request: LessonProgressRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -28,7 +29,7 @@ async def track_lesson(
     """Records completion status and time spent for a lesson.
 
     Args:
-        lesson_id (str): Target lesson code ID.
+        lesson_id (uuid.UUID): Target lesson UUID ID.
         request (LessonProgressRequest): Study metrics.
         current_user (User): Graded User session.
         db (AsyncSession): Active database session.
@@ -68,14 +69,14 @@ async def track_lesson(
 
 @router.get("/courses/{course_id}", response_model=ApiResponse[CourseProgressResponse])
 async def get_course_progress(
-    course_id: str,
+    course_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves overall study status and percentage for a course.
 
     Args:
-        course_id (str): Reference Course slug ID.
+        course_id (uuid.UUID): Reference Course UUID.
         current_user (User): Graded User session.
         db (AsyncSession): Active database session.
 
@@ -90,7 +91,7 @@ async def get_course_progress(
         return ApiResponse(
             success=True,
             data=CourseProgressResponse(
-                id=0,
+                id=uuid.UUID(int=0),
                 user_id=current_user.id,
                 course_id=course_id,
                 percentage=0.0,

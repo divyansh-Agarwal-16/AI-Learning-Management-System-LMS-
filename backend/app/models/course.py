@@ -4,32 +4,35 @@ This module houses the SQLAlchemy configurations for courses,
 lesson structures, dynamic player resources, and user enrollment linking tables.
 """
 
+import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import String, ForeignKey, Text, Integer, DateTime
+from sqlalchemy import String, ForeignKey, Text, Integer, DateTime, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, TimestampMixin
 
 
-class Course(Base):
+class Course(Base, TimestampMixin):
     """Course database model configuration.
 
     Attributes:
-        id (str): Primary key text identifier (e.g. 'python-basics').
+        id (uuid.UUID): Primary key UUID.
         title (str): Course name.
         description (str): Explanatory course context text details.
         difficulty (str): Categorization badge (e.g. Beginner, Intermediate).
         duration (str): Estimation metrics of workload completion (e.g. '5.5 hrs').
+        is_deleted (bool): Soft delete flag.
     """
 
     __tablename__ = "courses"
 
-    id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     difficulty: Mapped[str] = mapped_column(String(50), nullable=False)
     duration: Mapped[str] = mapped_column(String(50), nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(default=False)
 
     # Relationships
     lessons: Mapped[List["Lesson"]] = relationship(
@@ -60,12 +63,12 @@ class Course(Base):
     )
 
 
-class Lesson(Base):
+class Lesson(Base, TimestampMixin):
     """Lesson database model configuration.
 
     Attributes:
-        id (str): Primary key text identifier.
-        course_id (str): Course foreign link.
+        id (uuid.UUID): Primary key UUID.
+        course_id (uuid.UUID): Course foreign link.
         title (str): Name of the specific lesson.
         duration (str): Approximate duration of content.
         videoUrl (str): Optional resource stream location.
@@ -75,8 +78,8 @@ class Lesson(Base):
 
     __tablename__ = "lessons"
 
-    id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
-    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     duration: Mapped[str] = mapped_column(String(50), nullable=False)
     videoUrl: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
@@ -91,23 +94,23 @@ class Lesson(Base):
     )
 
 
-class Enrollment(Base):
+class Enrollment(Base, TimestampMixin):
     """Enrollment database model linking users and enrolled courses.
 
     Attributes:
-        id (int): Primary key ID.
-        user_id (int): Core user referencing key.
-        course_id (str): Reference course key.
+        id (uuid.UUID): Primary key UUID.
+        user_id (uuid.UUID): Core user referencing key.
+        course_id (uuid.UUID): Reference course key.
         enrolled_at (datetime): Timestamp tracking date.
     """
 
     __tablename__ = "enrollments"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
     enrolled_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)
     )
 

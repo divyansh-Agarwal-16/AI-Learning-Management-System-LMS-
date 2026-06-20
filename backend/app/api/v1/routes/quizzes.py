@@ -4,6 +4,7 @@ This module exposes endpoints for fetching a course's practice quiz,
 submitting completed quizzes for grading, and retrieving past submission results.
 """
 
+import uuid
 from typing import List
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,11 +21,11 @@ logger = structlog.get_logger()
 
 
 @router.get("/courses/{course_id}/quiz", response_model=ApiResponse[QuizResponse])
-async def get_quiz(course_id: str, db: AsyncSession = Depends(get_db)):
+async def get_quiz(course_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Retrieves the practice quiz questions linked to a course.
 
     Args:
-        course_id (str): Reference Course slug ID.
+        course_id (uuid.UUID): Reference Course UUID.
         db (AsyncSession): Active database session.
 
     Returns:
@@ -47,7 +48,7 @@ async def get_quiz(course_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/quizzes/{quiz_id}/submit", response_model=ApiResponse[SubmissionResponse])
 async def submit_quiz(
-    quiz_id: int,
+    quiz_id: uuid.UUID,
     request: SubmitQuizRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -55,7 +56,7 @@ async def submit_quiz(
     """Grades, saves, and returns results for a quiz submission.
 
     Args:
-        quiz_id (int): Target quiz ID.
+        quiz_id (uuid.UUID): Target quiz UUID ID.
         request (SubmitQuizRequest): Student submitted answers.
         current_user (User): Graded user session.
         db (AsyncSession): Active database session.
@@ -81,14 +82,14 @@ async def submit_quiz(
 
 @router.get("/quizzes/{quiz_id}/submissions", response_model=ApiResponse[List[SubmissionResponse]])
 async def get_quiz_results(
-    quiz_id: int,
+    quiz_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves past grading transaction files for a quiz.
 
     Args:
-        quiz_id (int): Graded quiz ID.
+        quiz_id (uuid.UUID): Graded quiz UUID ID.
         current_user (User): Graded user session.
         db (AsyncSession): Active database session.
 

@@ -4,6 +4,7 @@ This module houses validation models for sending user prompts, returning chatbot
 formatting daily study plans, and recommending courses.
 """
 
+import uuid
 from typing import List
 from pydantic import BaseModel, Field
 
@@ -50,13 +51,13 @@ class RecommendationSchema(BaseModel):
     """Schema representing one AI recommended course structure.
 
     Attributes:
-        id (str): Reference Course slug ID.
+        id (uuid.UUID): Reference Course UUID ID.
         title (str): Course name.
         description (str): Explanatory summary.
         duration (str): Approximate timing.
         difficulty (str): Syllabus difficulty level.
     """
-    id: str
+    id: uuid.UUID
     title: str
     description: str
     duration: str

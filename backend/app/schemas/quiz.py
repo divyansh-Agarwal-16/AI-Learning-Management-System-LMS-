@@ -4,6 +4,7 @@ This module houses validation rules for reading quiz structures, submitting stud
 and returning test score details.
 """
 
+import uuid
 from datetime import datetime
 from typing import List
 from pydantic import BaseModel, Field
@@ -13,11 +14,11 @@ class QuestionResponse(BaseModel):
     """Schema representing quiz questions without correct answers.
 
     Attributes:
-        id (int): Primary key ID.
+        id (uuid.UUID): Primary key ID.
         text (str): Prompt text.
         options (List[str]): Choices options text array.
     """
-    id: int
+    id: uuid.UUID
     text: str
     options: List[str]
 
@@ -28,13 +29,13 @@ class QuizResponse(BaseModel):
     """Schema representing practice quizzes containing questions list.
 
     Attributes:
-        id (int): Practice quiz ID.
-        course_id (str): Course slug mapping.
+        id (uuid.UUID): Practice quiz ID.
+        course_id (uuid.UUID): Course UUID mapping.
         title (str): Quiz title.
         questions (List[QuestionResponse]): Embedded questions.
     """
-    id: int
-    course_id: str
+    id: uuid.UUID
+    course_id: uuid.UUID
     title: str
     questions: List[QuestionResponse] = []
 
@@ -45,10 +46,10 @@ class SubmitAnswerRequest(BaseModel):
     """Schema representing one selected answer.
 
     Attributes:
-        question_id (int): Question ID context target.
+        question_id (uuid.UUID): Question ID context target.
         selected_option_idx (int): User selected choice index.
     """
-    question_id: int = Field(..., description="ID reference of the target Question")
+    question_id: uuid.UUID = Field(..., description="ID reference of the target Question")
     selected_option_idx: int = Field(..., ge=0, description="Selected zero-indexed choice index")
 
 
@@ -65,14 +66,14 @@ class SubmissionResponse(BaseModel):
     """Schema representing graded submission details.
 
     Attributes:
-        id (int): Submission transaction ID.
-        quiz_id (int): Practice quiz target ID.
+        id (uuid.UUID): Submission transaction ID.
+        quiz_id (uuid.UUID): Practice quiz target ID.
         score (int): Total correct answers.
         total_questions (int): Graded questions count.
         submitted_at (datetime): Gradation timestamp.
     """
-    id: int
-    quiz_id: int
+    id: uuid.UUID
+    quiz_id: uuid.UUID
     score: int
     total_questions: int
     submitted_at: datetime

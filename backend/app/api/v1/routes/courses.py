@@ -4,6 +4,7 @@ This module exposes endpoints for browsing the course catalog, retrieving course
 lessons, creating new courses/lessons, and enrolling in courses.
 """
 
+import uuid
 from typing import List, Optional
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -45,11 +46,11 @@ async def list_courses(
 
 
 @router.get("/{course_id}", response_model=ApiResponse[CourseResponse])
-async def get_course(course_id: str, db: AsyncSession = Depends(get_db)):
+async def get_course(course_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Retrieves detailed information and lessons for a specific course.
 
     Args:
-        course_id (str): Slug identifier key.
+        course_id (uuid.UUID): UUID identifier key.
         db (AsyncSession): Active database session.
 
     Returns:
@@ -107,7 +108,7 @@ async def create_course(
 
 @router.post("/{course_id}/lessons", response_model=ApiResponse[LessonResponse], status_code=status.HTTP_201_CREATED)
 async def create_lesson(
-    course_id: str,
+    course_id: uuid.UUID,
     request: LessonCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -115,7 +116,7 @@ async def create_lesson(
     """Appends a new lesson to an existing Course catalog.
 
     Args:
-        course_id (str): Course slug identifier key.
+        course_id (uuid.UUID): Course UUID identifier key.
         request (LessonCreate): Lesson values.
         current_user (User): Graded User authorization.
         db (AsyncSession): Active database session.
@@ -133,10 +134,10 @@ async def create_lesson(
 
     lesson = await CourseService.create_lesson(db, course_id, request)
     if not lesson:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Target Course '{course_id}' not found"
-        )
+         raise HTTPException(
+             status_code=status.HTTP_404_NOT_FOUND,
+             detail=f"Target Course '{course_id}' not found"
+         )
     logger.info("lesson_create_success", course_id=course_id, lesson_id=lesson.id)
     return ApiResponse(
         success=True,
@@ -147,14 +148,14 @@ async def create_lesson(
 
 @router.post("/{course_id}/enroll", response_model=ApiResponse[bool])
 async def enroll_course(
-    course_id: str,
+    course_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Enrolls the active user in a specific Course.
 
     Args:
-        course_id (str): Course slug ID.
+        course_id (uuid.UUID): Course UUID.
         current_user (User): Graded User session.
         db (AsyncSession): Active database session.
 

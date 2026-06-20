@@ -4,6 +4,7 @@ This module houses validation rules for reading course indexes, adding course co
 and cataloging lesson assets.
 """
 
+import uuid
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
@@ -12,14 +13,14 @@ class LessonCreate(BaseModel):
     """Schema validating lesson input elements during creation.
 
     Attributes:
-        id (str): Unique slug identifier.
+        id (Optional[uuid.UUID]): UUID identifier for lesson.
         title (str): Lesson name.
         duration (str): Approximate run timing.
         videoUrl (Optional[str]): Video stream path.
         pdfUrl (Optional[str]): Document reference link.
         order (int): Ordering index.
     """
-    id: str = Field(..., description="Slug identifier for lesson")
+    id: Optional[uuid.UUID] = Field(None, description="UUID identifier for lesson")
     title: str = Field(..., max_length=255)
     duration: str = Field(..., max_length=50)
     videoUrl: Optional[str] = Field(None, max_length=512)
@@ -31,16 +32,16 @@ class LessonResponse(BaseModel):
     """Schema validating returned lesson payload database states.
 
     Attributes:
-        id (str): Lesson slug ID.
-        course_id (str): Reference course key.
+        id (uuid.UUID): Lesson UUID ID.
+        course_id (uuid.UUID): Reference course key.
         title (str): Lesson name.
         duration (str): Run timing.
         videoUrl (Optional[str]): Video link.
         pdfUrl (Optional[str]): Document link.
         order (int): Index number.
     """
-    id: str
-    course_id: str
+    id: uuid.UUID
+    course_id: uuid.UUID
     title: str
     duration: str
     videoUrl: Optional[str] = None
@@ -54,13 +55,13 @@ class CourseCreate(BaseModel):
     """Schema validating courses during database input creation.
 
     Attributes:
-        id (str): Unique course slug ID.
+        id (Optional[uuid.UUID]): Course UUID.
         title (str): Course name.
         description (Optional[str]): Description.
         difficulty (str): Syllabus difficulty.
         duration (str): Overall duration estimate.
     """
-    id: str = Field(..., description="Slug identifier for course")
+    id: Optional[uuid.UUID] = Field(None, description="UUID identifier for course")
     title: str = Field(..., max_length=255)
     description: Optional[str] = None
     difficulty: str = Field(..., max_length=50)
@@ -71,14 +72,14 @@ class CourseResponse(BaseModel):
     """Schema validating returned course catalog payloads.
 
     Attributes:
-        id (str): Course identifier key.
+        id (uuid.UUID): Course identifier key.
         title (str): Course name.
         description (Optional[str]): Detailed description.
         difficulty (str): Level rating.
         duration (str): Timing summary.
         lessons (List[LessonResponse]): Embedded sorted lesson list.
     """
-    id: str
+    id: uuid.UUID
     title: str
     description: Optional[str] = None
     difficulty: str

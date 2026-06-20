@@ -4,6 +4,7 @@ This module houses business transactions for user registration, credentials
 validation, and JWT access/refresh token exchanges.
 """
 
+import uuid
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -70,7 +71,7 @@ class AuthService:
         Returns:
             Optional[User]: The authenticated database User object, or None if invalid.
         """
-        result = await db.execute(select(User).where(User.email == request.email))
+        result = await db.execute(select(User).where(User.email == request.email, User.is_deleted == False))
         user = result.scalars().first()
         if not user:
             return None
@@ -114,8 +115,13 @@ class AuthService:
         except JWTError:
             return None
 
+        try:
+            uuid_user_id = uuid.UUID(user_id)
+        except ValueError:
+            return None
+
         # Verify user still exists in database
-        result = await db.execute(select(User).where(User.id == int(user_id)))
+        result = await db.execute(select(User).where(User.id == uuid_user_id, User.is_deleted == False))
         user = result.scalars().first()
         if not user or not user.is_active:
             return None

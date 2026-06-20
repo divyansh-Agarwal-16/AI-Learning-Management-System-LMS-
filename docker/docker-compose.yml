@@ -1,49 +1,40 @@
 version: '3.8'
 
 services:
-  postgres:
+  db:
     image: postgres:15-alpine
     container_name: lms-postgres
     restart: always
     environment:
-      POSTGRES_USER: lms_user
-      POSTGRES_PASSWORD: lms_secure_password
-      POSTGRES_DB: lms_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ailms
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
 
-  backend:
-    build:
-      context: ../backend
-      dockerfile: ../docker/Dockerfile.backend
-    container_name: lms-backend
+  redis:
+    image: redis:7-alpine
+    container_name: lms-redis
     restart: always
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "6379:6379"
     volumes:
-      - ../backend:/app
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://lms_user:lms_secure_password@postgres:5432/lms_db
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    depends_on:
-      - postgres
+      - redisdata:/data
 
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: ../docker/Dockerfile.frontend
-    container_name: lms-frontend
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: lms-pgadmin
     restart: always
-    ports:
-      - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: adminpassword
+    ports:
+      - "5050:80"
     depends_on:
-      - backend
+      - db
 
 volumes:
-  postgres_data:
+  pgdata:
+  redisdata:

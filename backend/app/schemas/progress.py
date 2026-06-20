@@ -4,6 +4,7 @@ This module houses validation rules for updating lesson progress states
 and responding with overall course progress statistics.
 """
 
+import uuid
 from pydantic import BaseModel, Field
 
 
@@ -22,15 +23,15 @@ class LessonProgressResponse(BaseModel):
     """Schema validating returned lesson tracking database states.
 
     Attributes:
-        id (int): Primary key ID.
-        user_id (int): Graded student reference key.
-        lesson_id (str): Target lesson code ID.
+        id (uuid.UUID): Primary key UUID.
+        user_id (uuid.UUID): Graded student reference key.
+        lesson_id (uuid.UUID): Target lesson code ID.
         completed (bool): Completion state.
         time_spent (int): Cumulative study timing.
     """
-    id: int
-    user_id: int
-    lesson_id: str
+    id: uuid.UUID
+    user_id: uuid.UUID
+    lesson_id: uuid.UUID
     completed: bool
     time_spent: int
 
@@ -41,15 +42,15 @@ class CourseProgressResponse(BaseModel):
     """Schema validating overall course completion statistics.
 
     Attributes:
-        id (int): Progress record ID.
-        user_id (int): Student reference.
-        course_id (str): Reference Course slug ID.
+        id (uuid.UUID): Progress record UUID.
+        user_id (uuid.UUID): Student reference UUID.
+        course_id (uuid.UUID): Reference Course UUID.
         percentage (float): Cumulative calculated percentage (0.0 to 100.0).
         status (str): Study status (not_started, in_progress, completed).
     """
-    id: int
-    user_id: int
-    course_id: str
+    id: uuid.UUID
+    user_id: uuid.UUID
+    course_id: uuid.UUID
     percentage: float
     status: str
 

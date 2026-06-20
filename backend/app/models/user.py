@@ -4,30 +4,33 @@ This module houses the SQLAlchemy schema configurations for User credentials,
 detailed profile bios/avatars, and onboarding selections.
 """
 
+import uuid
 from typing import List, Optional
-from sqlalchemy import String, ForeignKey, Text, Float
+from sqlalchemy import String, ForeignKey, Text, Float, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, TimestampMixin
 
 
-class User(Base):
+class User(Base, TimestampMixin):
     """User database model holding core authentication and role details.
 
     Attributes:
-        id (int): Primary key ID.
+        id (uuid.UUID): Primary key ID.
         email (str): Unique, indexed login email address.
         hashed_password (str): Hash key string of password.
         is_active (bool): User active status.
+        is_deleted (bool): Soft delete flag.
         role (str): Role designation (e.g., student, admin).
     """
 
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
+    is_deleted: Mapped[bool] = mapped_column(default=False)
     role: Mapped[str] = mapped_column(String(50), default="student")
 
     # One-to-One Relationships
@@ -72,12 +75,12 @@ class User(Base):
     )
 
 
-class UserProfile(Base):
+class UserProfile(Base, TimestampMixin):
     """UserProfile database model storing user profile customization.
 
     Attributes:
-        id (int): Primary key ID.
-        user_id (int): Foreign key referencing core User.
+        id (uuid.UUID): Primary key ID.
+        user_id (uuid.UUID): Foreign key referencing core User.
         full_name (str): The user's name.
         avatar_url (str): Storage path link to uploaded user avatar images.
         bio (str): Custom bio writeup.
@@ -85,8 +88,8 @@ class UserProfile(Base):
 
     __tablename__ = "user_profiles"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     bio: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -94,12 +97,12 @@ class UserProfile(Base):
     user: Mapped["User"] = relationship("User", back_populates="profile")
 
 
-class OnboardingData(Base):
+class OnboardingData(Base, TimestampMixin):
     """OnboardingData database model holding onboarding preferences.
 
     Attributes:
-        id (int): Primary key ID.
-        user_id (int): Foreign key referencing core User.
+        id (uuid.UUID): Primary key ID.
+        user_id (uuid.UUID): Foreign key referencing core User.
         topic (str): Primary education topic selection.
         level (str): Self-selected skill level capability.
         hours_per_week (float): Targeted workload timing settings.
@@ -107,8 +110,8 @@ class OnboardingData(Base):
 
     __tablename__ = "onboarding_data"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     topic: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     hours_per_week: Mapped[float] = mapped_column(Float, default=0.0)

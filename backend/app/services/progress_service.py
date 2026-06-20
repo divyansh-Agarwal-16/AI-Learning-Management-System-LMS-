@@ -4,6 +4,7 @@ This module houses operations for recording lesson completion status,
 saving study times, and recalculating course completion metrics.
 """
 
+import uuid
 from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,8 +20,8 @@ class ProgressService:
     @staticmethod
     async def track_lesson_progress(
         db: AsyncSession,
-        user_id: int,
-        lesson_id: str,
+        user_id: uuid.UUID,
+        lesson_id: uuid.UUID,
         completed: bool,
         time_spent: int
     ) -> Optional[LessonProgress]:
@@ -28,32 +29,35 @@ class ProgressService:
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Core user referencing key ID.
-            lesson_id (str): Reference target Lesson ID.
+            user_id (uuid.UUID): Core user referencing key ID.
+            lesson_id (uuid.UUID): Reference target Lesson ID.
             completed (bool): Completion state flag.
             time_spent (int): Timing spent on the lesson (in seconds).
 
         Returns:
             Optional[LessonProgress]: Updated LessonProgress object.
         """
+        user_uuid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+        lesson_uuid = uuid.UUID(str(lesson_id)) if not isinstance(lesson_id, uuid.UUID) else lesson_id
+
         # Fetch lesson details to find course_id
-        res_lesson = await db.execute(select(Lesson).where(Lesson.id == lesson_id))
+        res_lesson = await db.execute(select(Lesson).where(Lesson.id == lesson_uuid))
         lesson = res_lesson.scalars().first()
         if not lesson:
             return None
 
         # Check if record exists
         stmt = select(LessonProgress).where(
-            LessonProgress.user_id == user_id,
-            LessonProgress.lesson_id == lesson_id
+            LessonProgress.user_id == user_uuid,
+            LessonProgress.lesson_id == lesson_uuid
         )
         res = await db.execute(stmt)
         progress = res.scalars().first()
 
         if not progress:
             progress = LessonProgress(
-                user_id=user_id,
-                lesson_id=lesson_id,
+                user_id=user_uuid,
+                lesson_id=lesson_uuid,
                 completed=completed,
                 time_spent=time_spent
             )
@@ -66,28 +70,31 @@ class ProgressService:
         await db.refresh(progress)
 
         # Recalculate course percentage
-        await ProgressService.recalculate_course_progress(db, user_id, lesson.course_id)
+        await ProgressService.recalculate_course_progress(db, user_uuid, lesson.course_id)
 
         return progress
 
     @staticmethod
     async def recalculate_course_progress(
         db: AsyncSession,
-        user_id: int,
-        course_id: str
+        user_id: uuid.UUID,
+        course_id: uuid.UUID
     ) -> float:
         """Recalculates student course completion percentage based on lesson statuses.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Student User ID.
-            course_id (str): Target Course ID.
+            user_id (uuid.UUID): Student User ID.
+            course_id (uuid.UUID): Target Course ID.
 
         Returns:
             float: Cumulative course completion percentage (0.0 to 100.0).
         """
+        user_uuid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+        course_uuid = uuid.UUID(str(course_id)) if not isinstance(course_id, uuid.UUID) else course_id
+
         # Get all lessons associated with the course
-        res_lessons = await db.execute(select(Lesson.id).where(Lesson.course_id == course_id))
+        res_lessons = await db.execute(select(Lesson.id).where(Lesson.course_id == course_uuid))
         lesson_ids = [row[0] for row in res_lessons.all()]
         
         if not lesson_ids:
@@ -97,7 +104,7 @@ class ProgressService:
         stmt = (
             select(func.count(LessonProgress.id))
             .where(
-                LessonProgress.user_id == user_id,
+                LessonProgress.user_id == user_uuid,
                 LessonProgress.lesson_id.in_(lesson_ids),
                 LessonProgress.completed == True
             )
@@ -111,14 +118,14 @@ class ProgressService:
         # Get or create CourseProgress record
         res_progress = await db.execute(
             select(CourseProgress)
-            .where(CourseProgress.user_id == user_id, CourseProgress.course_id == course_id)
+            .where(CourseProgress.user_id == user_uuid, CourseProgress.course_id == course_uuid)
         )
         course_progress = res_progress.scalars().first()
 
         if not course_progress:
             course_progress = CourseProgress(
-                user_id=user_id,
-                course_id=course_id,
+                user_id=user_uuid,
+                course_id=course_uuid,
                 percentage=percentage,
                 status="in_progress"
             )
@@ -138,21 +145,24 @@ class ProgressService:
     @staticmethod
     async def get_course_progress(
         db: AsyncSession,
-        user_id: int,
-        course_id: str
+        user_id: uuid.UUID,
+        course_id: uuid.UUID
     ) -> Optional[CourseProgress]:
         """Fetches the CourseProgress configuration status for a student.
 
         Args:
             db (AsyncSession): Active database session.
-            user_id (int): Student User ID.
-            course_id (str): Reference Course slug ID.
+            user_id (uuid.UUID): Student User ID.
+            course_id (uuid.UUID): Reference Course UUID.
 
         Returns:
             Optional[CourseProgress]: Course progress DB object, if exists.
         """
+        user_uuid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+        course_uuid = uuid.UUID(str(course_id)) if not isinstance(course_id, uuid.UUID) else course_id
+
         res = await db.execute(
             select(CourseProgress)
-            .where(CourseProgress.user_id == user_id, CourseProgress.course_id == course_id)
+            .where(CourseProgress.user_id == user_uuid, CourseProgress.course_id == course_uuid)
         )
         return res.scalars().first()
