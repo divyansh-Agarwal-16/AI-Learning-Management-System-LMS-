@@ -7,6 +7,7 @@ and sets up global exception overrides for consistent JSON response wrappers.
 
 import logging
 import sys
+from pathlib import Path
 import structlog
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.exceptions import RequestValidationError
@@ -16,7 +17,13 @@ from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
 from app.api.v1.api import api_router
-from app.api.v1.routes.ai import limiter
+
+# Configure sys.path to resolve agents import if launched from backend directory
+root_path = Path(__file__).parent
+if str(root_path) not in sys.path:
+    sys.path.append(str(root_path))
+
+from agents.api import limiter
 from app.core.config import settings
 
 # 1. Configure Structured Logging with structlog

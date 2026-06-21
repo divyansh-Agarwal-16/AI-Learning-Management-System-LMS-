@@ -1,93 +1,100 @@
-import os
-from typing import Annotated, TypedDict, List
-from dotenv import load_dotenv
+"""Graph Assembly module for the Multi-Agent System.
+
+Assembles the StateGraph, wires conditional edges, and compiles the flow with memory checkpointers.
+"""
+
+import sys
+import structlog
+from pathlib import Path
+from typing import Dict, Any
+
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
 
-load_dotenv()
+# Configure sys.path for root directory imports
+root_path = Path(__file__).parent.parent
+if str(root_path) not in sys.path:
+    sys.path.append(str(root_path))
 
-# Define state structure
-class AgentState(TypedDict):
-    messages: List[BaseMessage]
-    current_topic: str
-    quiz_generated: bool
-    evaluation: str
+from agents.state import AgentState
+from agents.agents.orchestrator import orchestrator_node
+from agents.agents.tutor import tutor_node
+from agents.agents.quiz_generator import quiz_generator_node
+from agents.agents.path_advisor import path_advisor_node
 
-# Define nodes/agents
-def tutor_node(state: AgentState):
-    """Personalized AI Tutor node that explains concepts."""
-    messages = state["messages"]
-    # Initialize LLM
-    llm = ChatOpenAI(model="gpt-4-turbo")
+logger = structlog.get_logger()
+
+
+def route_decision(state: AgentState) -> str:
+    """Evaluates next_action flag to decide transition to specialized node or END.
+
+    Args:
+        state (AgentState): Unified graph state.
+
+    Returns:
+        str: Name of the next transition destination.
+    """
+    action = state.get("next_action", "tutor").strip().lower()
     
-    system_prompt = (
-        "You are an empathetic, expert AI Tutor. Explain concepts thoroughly, "
-        "checking for understanding. If the user is ready, route to quiz generation."
-    )
+    logger.info("graph_route_decision", action=action)
     
-    # Simple invoke (mock or LLM call if keys are set)
-    if os.getenv("OPENAI_API_KEY"):
-        response = llm.invoke([AIMessage(content=system_prompt)] + messages)
-        new_messages = messages + [response]
+    if action == "tutor":
+        return "tutor"
+    elif action == "quiz_generator":
+        return "quiz_generator"
+    elif action == "path_advisor":
+        return "path_advisor"
     else:
-        new_messages = messages + [AIMessage(content="[Tutor Agent] Let's learn about Python! Are you ready for a quiz?")]
-        
-    return {
-        "messages": new_messages,
-        "current_topic": state.get("current_topic", "General"),
-        "quiz_generated": state.get("quiz_generated", False)
-    }
+        return END
 
-def quiz_generator_node(state: AgentState):
-    """Node that generates quiz questions based on the topic."""
-    messages = state["messages"]
-    
-    quiz_msg = AIMessage(content="[Quiz Generator Agent] Here is your question: What is a lambda function in Python?")
-    
-    return {
-        "messages": messages + [quiz_msg],
-        "quiz_generated": True
-    }
 
-# Router condition
-def should_continue(state: AgentState):
-    """Determine whether to generate a quiz or stay in tutoring phase."""
-    # Check if the user requested a quiz or if the tutor decided to quiz
-    messages = state["messages"]
-    last_message = messages[-1].content.lower() if messages else ""
-    
-    if "ready" in last_message or "quiz" in last_message:
-        return "generate_quiz"
-    return END
-
-# Build the workflow graph
 def build_lms_agent_graph():
+    """Assembles the StateGraph routing nodes and compiles it with memory savers.
+
+    Returns:
+        CompiledStateGraph: The compiled state graph.
+    """
+    logger.info("building_lms_agent_graph_start")
+    
+    # Initialize state graph with our TypedDict schema
     workflow = StateGraph(AgentState)
     
-    # Add nodes
+    # Register all four agent nodes
+    workflow.add_node("orchestrator", orchestrator_node)
     workflow.add_node("tutor", tutor_node)
     workflow.add_node("quiz_generator", quiz_generator_node)
+    workflow.add_node("path_advisor", path_advisor_node)
     
-    # Set entry point
-    workflow.set_entry_point("tutor")
+    # Set the entry point to orchestrator dispatcher
+    workflow.set_entry_point("orchestrator")
     
-    # Add conditional edges
+    # Configure conditional routing edges from orchestrator to specialized nodes
     workflow.add_conditional_edges(
-        "tutor",
-        should_continue,
+        "orchestrator",
+        route_decision,
         {
-            "generate_quiz": "quiz_generator",
+            "tutor": "tutor",
+            "quiz_generator": "quiz_generator",
+            "path_advisor": "path_advisor",
             END: END
         }
     )
     
-    # Add normal edges
-    workflow.add_edge("quiz_generator", END)
+    # Configure loopbacks returning execution control back to the orchestrator dispatcher
+    workflow.add_edge("tutor", "orchestrator")
+    workflow.add_edge("quiz_generator", "orchestrator")
+    workflow.add_edge("path_advisor", "orchestrator")
     
-    # Compile
-    return workflow.compile()
+    # Compile graph with persistent memory savers for session tracking
+    memory = InMemorySaver()
+    compiled_graph = workflow.compile(checkpointer=memory)
+    
+    logger.info("building_lms_agent_graph_success")
+    return compiled_graph
+
+
+# Compile the global graph instance
+graph = build_lms_agent_graph()
 
 if __name__ == "__main__":
-    app_graph = build_lms_agent_graph()
-    print("LangGraph Multi-Agent flow successfully compiled.")
+    print("Multi-Agent Graph successfully assembled.")
