@@ -1,8 +1,7 @@
 """AI router module for the AI LMS backend.
 
-This module exposes endpoints for student AI Tutor streaming/chat queries,
-generating daily study schedules, and suggesting dynamic learning paths.
-All routes are rate-limited to 10 requests per minute per user.
+This module exposes endpoints for student AI Tutor quizzes, study plan generation,
+concept maps, and grading/feedback logic. All routes are rate-limited to 10 requests per minute.
 """
 
 import uuid
@@ -16,10 +15,22 @@ from app.core.config import settings
 from app.core.dependencies import get_db, get_current_user
 from app.models.user import User
 from app.schemas.base import ApiResponse
-from app.schemas.ai import ChatRequest, ChatResponse, StudyPlanResponse, RecommendationsResponse
+from app.schemas.ai import (
+    GenerateQuizRequest,
+    GenerateQuizResponse,
+    NewStudyPlanRequest,
+    NewStudyPlanResponse,
+    ConceptMapRequest,
+    ConceptMapResponse,
+    AnswerFeedbackRequest,
+    AnswerFeedbackResponse
+)
 from app.services.ai_service import AIService
 
-# Setup Slowapi rate limiter key resolver using JWT sub (User ID) or IP fallback
+logger = structlog.get_logger()
+
+
+# Rate limiter key resolver using JWT sub (User ID) or IP fallback
 def resolve_user_or_ip_key(request: Request) -> str:
     """Resolves rate limit keys by decoding user ID from JWT or IP address.
 
@@ -46,58 +57,63 @@ def resolve_user_or_ip_key(request: Request) -> str:
 # Limiter instance
 limiter = Limiter(key_func=resolve_user_or_ip_key)
 router = APIRouter(prefix="/ai", tags=["AI Integration"])
-logger = structlog.get_logger()
 
 
-@router.post("/chat", response_model=ApiResponse[ChatResponse])
+@router.post("/generate-quiz", response_model=ApiResponse[GenerateQuizResponse])
 @limiter.limit("10/minute")
-async def chat(
+async def generate_quiz(
     request: Request,
-    body: ChatRequest,
-    course_id: uuid.UUID,
+    body: GenerateQuizRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Answers a course-related query, rate-limited by user context.
+    """Generates a structured practice quiz for a lesson.
 
     Args:
-        request (Request): Mandatory request parameter for slowapi.
-        body (ChatRequest): Prompts query input details.
-        course_id (uuid.UUID): Reference Course UUID.
+        request (Request): Request context.
+        body (GenerateQuizRequest): Request options.
         current_user (User): Graded User session.
         db (AsyncSession): Active database session.
 
     Returns:
-        ApiResponse[ChatResponse]: Standardized chat response.
+        ApiResponse[GenerateQuizResponse]: Generated quiz metadata and questions.
     """
-    logger.info("ai_chat_requested", user_id=current_user.id, course_id=course_id)
-    reply = await AIService.generate_chat_response(db, current_user.id, course_id, body.message)
+    logger.info("ai_generate_quiz_requested", user_id=current_user.id, lesson_id=body.lesson_id)
+    quiz_data = await AIService.generate_quiz_genai(
+        db=db,
+        lesson_id=body.lesson_id,
+        difficulty=body.difficulty,
+        num_questions=body.num_questions,
+        user_id=current_user.id
+    )
     return ApiResponse(
         success=True,
-        data=ChatResponse(reply=reply),
-        message="AI Tutor response generated successfully"
+        data=quiz_data,
+        message="Quiz generated successfully"
     )
 
 
-@router.get("/study-plan", response_model=ApiResponse[StudyPlanResponse])
+@router.post("/study-plan", response_model=ApiResponse[NewStudyPlanResponse])
 @limiter.limit("10/minute")
 async def get_study_plan(
     request: Request,
+    body: NewStudyPlanRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Generates personalized study task milestones, rate-limited.
+    """Generates a personalized 7-day study plan based on user scoring progress.
 
     Args:
-        request (Request): Mandatory request context.
+        request (Request): Request context.
+        body (NewStudyPlanRequest): Student user request parameter context.
         current_user (User): Graded User session.
         db (AsyncSession): Active database session.
 
     Returns:
-        ApiResponse[StudyPlanResponse]: Standardized study milestones.
+        ApiResponse[NewStudyPlanResponse]: Personalized weekly plan.
     """
-    logger.info("ai_study_plan_requested", user_id=current_user.id)
-    plan = await AIService.generate_study_plan(db, current_user.id)
+    logger.info("ai_study_plan_requested", user_id=current_user.id, target_user_id=body.user_id)
+    plan = await AIService.generate_study_plan_genai(db=db, user_id=body.user_id)
     return ApiResponse(
         success=True,
         data=plan,
@@ -105,27 +121,63 @@ async def get_study_plan(
     )
 
 
-@router.get("/recommendations", response_model=ApiResponse[RecommendationsResponse])
+@router.post("/concept-map", response_model=ApiResponse[ConceptMapResponse])
 @limiter.limit("10/minute")
-async def get_recommendations(
+async def get_concept_map(
     request: Request,
+    body: ConceptMapRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Recommends courses matching the user profile skills, rate-limited.
+    """Generates a concept map network mapping core nodes and edge relationships.
 
     Args:
-        request (Request): Mandatory request context.
+        request (Request): Request context.
+        body (ConceptMapRequest): Target map topic keyword.
         current_user (User): Graded User session.
         db (AsyncSession): Active database session.
 
     Returns:
-        ApiResponse[RecommendationsResponse]: Standardized course recommendations list.
+        ApiResponse[ConceptMapResponse]: Nodes and edges mapping.
     """
-    logger.info("ai_recommendations_requested", user_id=current_user.id)
-    recs = await AIService.generate_course_recommendations(db, current_user.id)
+    logger.info("ai_concept_map_requested", user_id=current_user.id, topic=body.topic)
+    concept_map = await AIService.generate_concept_map_genai(db=db, topic=body.topic, user_id=current_user.id)
     return ApiResponse(
         success=True,
-        data=recs,
-        message="AI recommendations generated successfully"
+        data=concept_map,
+        message="Concept map generated successfully"
+    )
+
+
+@router.post("/feedback", response_model=ApiResponse[AnswerFeedbackResponse])
+@limiter.limit("10/minute")
+async def get_answer_feedback(
+    request: Request,
+    body: AnswerFeedbackRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Evaluates student's answer submission, returning a score, constructive feedback, and improvements.
+
+    Args:
+        request (Request): Request context.
+        body (AnswerFeedbackRequest): Student answer and correct answer keys context.
+        current_user (User): Graded User session.
+        db (AsyncSession): Active database session.
+
+    Returns:
+        ApiResponse[AnswerFeedbackResponse]: Score, feedback, and 3 improvement suggestions.
+    """
+    logger.info("ai_answer_feedback_requested", user_id=current_user.id)
+    feedback = await AIService.generate_answer_feedback_genai(
+        db=db,
+        question=body.question,
+        student_answer=body.student_answer,
+        correct_answer=body.correct_answer,
+        user_id=current_user.id
+    )
+    return ApiResponse(
+        success=True,
+        data=feedback,
+        message="Feedback generated successfully"
     )

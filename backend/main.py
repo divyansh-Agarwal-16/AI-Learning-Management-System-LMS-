@@ -23,7 +23,7 @@ root_path = Path(__file__).parent
 if str(root_path) not in sys.path:
     sys.path.append(str(root_path))
 
-from agents.api import limiter
+from app.api.v1.routes.ai import limiter
 from app.core.config import settings
 
 # 1. Configure Structured Logging with structlog

@@ -71,3 +71,102 @@ class RecommendationsResponse(BaseModel):
         recommendations (List[RecommendationSchema]): Course recommendations.
     """
     recommendations: List[RecommendationSchema] = Field(default=[])
+
+
+# --- NEW Phase 8 GenAI Schemas ---
+
+class QuizQuestionItem(BaseModel):
+    """Schema representing one quiz question (multiple choice, short answer, or code completion)."""
+    id: str = Field(..., description="Unique question identifier")
+    type: str = Field(..., description="Type of question: 'multiple_choice', 'short_answer', or 'code_completion'")
+    question: str = Field(..., description="The question prompt text")
+    options: List[str] = Field(default=[], description="List of four options for multiple choice; empty for short answer / code completion")
+    correct_answer: str = Field(..., description="The correct answer text")
+    explanation: str = Field(..., description="A detailed explanation of why the correct answer is right")
+
+
+class GenerateQuizRequest(BaseModel):
+    """Schema for requesting a dynamically generated quiz."""
+    lesson_id: uuid.UUID = Field(..., description="Target lesson UUID ID")
+    difficulty: str = Field(..., description="Target difficulty: 'Beginner', 'Intermediate', 'Advanced'")
+    num_questions: int = Field(5, description="Number of questions to compile")
+
+
+class GenerateQuizResponse(BaseModel):
+    """Schema for returning the compiled quiz structure."""
+    quiz_title: str = Field(..., description="Generated title of the quiz")
+    difficulty: str = Field(..., description="Difficulty level of the quiz")
+    questions: List[QuizQuestionItem] = Field(default=[])
+
+
+class NewStudyTaskSchema(BaseModel):
+    """Schema representing one study plan task."""
+    time: str = Field(..., description="Time of the task, e.g., 'Morning', '9:00 AM'")
+    activity: str = Field(..., description="Study activity description")
+    resource: str = Field(..., description="Lesson title or book resource name")
+    duration_mins: int = Field(..., description="Duration of the task in minutes")
+
+
+class DailyPlan(BaseModel):
+    """Schema representing a daily list of tasks."""
+    day: str = Field(..., description="Day indicator, e.g., 'Day 1', 'Monday'")
+    tasks: List[NewStudyTaskSchema] = Field(default=[])
+
+
+class NewStudyPlanRequest(BaseModel):
+    """Schema for requesting a data-driven 7-day study plan."""
+    user_id: uuid.UUID = Field(..., description="Target user UUID ID")
+
+
+class NewStudyPlanResponse(BaseModel):
+    """Schema representing a compiled weekly study schedule."""
+    week_goal: str = Field(..., description="Overarching weekly study goal")
+    daily_plans: List[DailyPlan] = Field(default=[])
+
+
+class ConceptMapNode(BaseModel):
+    """Schema representing a concept map node."""
+    id: str = Field(..., description="Unique node ID")
+    label: str = Field(..., description="Name or label of the concept node")
+    type: str = Field(..., description="Type of node: e.g., 'core', 'subconcept', 'related'")
+
+
+class ConceptMapEdge(BaseModel):
+    """Schema representing a concept map edge relationship."""
+    source: str = Field(..., description="Source node ID")
+    target: str = Field(..., description="Target node ID")
+    label: str = Field(..., description="Relationship label describing connection")
+
+
+class ConceptMapRequest(BaseModel):
+    """Schema for requesting a concept map diagram."""
+    topic: str = Field(..., min_length=1, description="Topic to graph")
+
+
+class ConceptMapResponse(BaseModel):
+    """Schema representing a generated concept map structure."""
+    nodes: List[ConceptMapNode] = Field(default=[])
+    edges: List[ConceptMapEdge] = Field(default=[])
+
+
+class AnswerFeedbackRequest(BaseModel):
+    """Schema for submitting student answer for evaluation."""
+    question: str = Field(..., description="Question prompt text")
+    student_answer: str = Field(..., description="Plain-text student response")
+    correct_answer: str = Field(..., description="Correct reference answer")
+
+
+class AnswerFeedbackResponse(BaseModel):
+    """Schema for returning structured grading results."""
+    score: int = Field(..., ge=0, le=10, description="Graded score index from 0 to 10")
+    feedback: str = Field(..., description="Constructive descriptive review")
+    improvements: List[str] = Field(..., description="Exactly three improvement suggestions")
+
+    from pydantic import field_validator
+
+    @field_validator('improvements')
+    @classmethod
+    def validate_improvements_count(cls, v: List[str]) -> List[str]:
+        if len(v) != 3:
+            raise ValueError("improvements list must contain exactly 3 suggestions")
+        return v

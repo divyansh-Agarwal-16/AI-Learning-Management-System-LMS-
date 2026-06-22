@@ -6,7 +6,7 @@ statistics and maintaining context history logs for student chats with the AI tu
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, ForeignKey, Integer, DateTime, Text, UUID
+from sqlalchemy import String, ForeignKey, Integer, DateTime, Text, UUID, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base, TimestampMixin
@@ -21,6 +21,7 @@ class AIUsageLog(Base, TimestampMixin):
         action (str): Specific action triggering LLM calls (e.g. 'quiz_gen', 'chat').
         tokens_used (int): Overall payload size metrics.
         latency_ms (int): Processing duration metrics in milliseconds.
+        cost (float): Overall cost of the LLM execution.
     """
 
     __tablename__ = "ai_usage_logs"
@@ -30,6 +31,7 @@ class AIUsageLog(Base, TimestampMixin):
     action: Mapped[str] = mapped_column(String(255), nullable=False)
     tokens_used: Mapped[int] = mapped_column(Integer, default=0)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    cost: Mapped[float] = mapped_column(Float, default=0.0)
 
 
 class ChatHistory(Base, TimestampMixin):

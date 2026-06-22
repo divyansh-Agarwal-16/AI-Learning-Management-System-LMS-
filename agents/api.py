@@ -35,31 +35,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 logger = structlog.get_logger()
 
 
-# Rate limiter key resolver using JWT sub (User ID) or IP fallback
-def resolve_user_or_ip_key(request: Request) -> str:
-    """Resolves rate limit keys by decoding user ID from JWT or IP address.
-
-    Args:
-        request (Request): The incoming request context.
-
-    Returns:
-        str: Unique key identifier.
-    """
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        try:
-            token = auth_header.split(" ")[1]
-            from jose import jwt
-            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM])
-            user_id = payload.get("sub")
-            if user_id:
-                return f"user_{user_id}"
-        except Exception:
-            pass
-    return get_remote_address(request)
-
-
-limiter = Limiter(key_func=resolve_user_or_ip_key)
+from app.api.v1.routes.ai import limiter
 router = APIRouter(prefix="/ai", tags=["AI Integration"])
 
 
