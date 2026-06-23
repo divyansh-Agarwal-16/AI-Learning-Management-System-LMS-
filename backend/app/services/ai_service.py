@@ -209,6 +209,10 @@ async def call_llm_json(prompt: str, response_model: Any) -> tuple:
                 # Return dummy Pydantic responses matching schemas
                 raise ValueError("Mock key fallback triggers mock data generation.")
                 
+            import time
+            from app.core.metrics import LMS_LLM_LATENCY, LMS_LLM_TOKENS
+
+            start_time = time.time()
             response = await litellm.acompletion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
@@ -216,12 +220,19 @@ async def call_llm_json(prompt: str, response_model: Any) -> tuple:
                 temperature=0.2,
                 api_key=api_key
             )
+            latency = time.time() - start_time
+            LMS_LLM_LATENCY.observe(latency)
             
             content = response.choices[0].message.content
             data = json.loads(content)
             validated = response_model(**data)
             
             usage = response.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            LMS_LLM_TOKENS.labels(token_type="prompt_tokens").inc(prompt_tokens)
+            LMS_LLM_TOKENS.labels(token_type="completion_tokens").inc(completion_tokens)
+            
             tokens = usage.get("total_tokens", 0)
             cost = 0.0
             try:

@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 # Set mock environment variables before imports
 os.environ["OPENAI_API_KEY"] = "mock-key-for-testing"
-os.environ["GENAI_MODEL"] = "gpt-4"
+os.environ["GENAI_MODEL"] = "gpt-4o"
 
 # Add backend and root directories to path
 backend_dir = os.path.dirname(os.path.abspath(__file__))

@@ -45,3 +45,11 @@ Thumbs.db
 # Docker / Local db
 postgres_data/
 .docker-db/
+
+# Python test coverage
+.coverage
+test_output.txt
+htmlcov/
+
+# RAG evaluation results
+rag/eval/results/

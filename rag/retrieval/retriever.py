@@ -94,87 +94,93 @@ class LMSHybridRetriever:
         Raises:
             FileNotFoundError: If the local docstore is missing (suggesting ingestion wasn't run).
         """
-        # 1. Resolve storage contexts
-        course_dir = STORAGE_DIR / f"course_{course_id}"
-        docstore_path = course_dir / "docstore.json"
-
-        if not docstore_path.exists():
-            raise FileNotFoundError(
-                f"No database index records found for course '{course_id}'. "
-                "Please run ingestion first to index the course resources."
-            )
-
-        # Load parent docstore
-        docstore = SimpleDocumentStore.from_persist_path(str(docstore_path))
-        all_nodes = list(docstore.docs.values())
-        child_nodes = [node for node in all_nodes if node.metadata.get("chunk_type") == "child"]
-
-        if not child_nodes:
-            return []
-
-        # 2. Dense Vector Retrieval (Pinecone)
-        vector_store = PineconeVectorStore(
-            pinecone_index=self.pinecone_index,
-            namespace=f"course_{course_id}"
-        )
-        index = VectorStoreIndex.from_vector_store(
-            vector_store,
-            embed_model=self.embed_model
-        )
-        # Fetch top 10 candidates from vector store
-        vector_retriever = index.as_retriever(similarity_top_k=10)
-        vector_results = vector_retriever.retrieve(query_str)
-
-        # 3. Sparse Keyword Retrieval (Local BM25)
-        # Build local BM25 index on child nodes loaded from local docstore
-        bm25_retriever = BM25Retriever.from_defaults(
-            nodes=child_nodes,
-            similarity_top_k=10
-        )
-        bm25_results = bm25_retriever.retrieve(query_str)
-
-        # 4. Combine and Deduplicate Results by Node ID
-        seen_ids = set()
-        combined_nodes = []
-        for node_with_score in vector_results + bm25_results:
-            node_id = node_with_score.node.node_id
-            if node_id not in seen_ids:
-                seen_ids.add(node_id)
-                combined_nodes.append(node_with_score)
-
-        if not combined_nodes:
-            return []
-
-        # 5. Cohere Reranking
-        query_bundle = QueryBundle(query_str)
+        import time
+        from app.core.metrics import LMS_RAG_RETRIEVAL_TIME
+        start_time = time.time()
         try:
-            reranked_nodes = self.reranker.postprocess_nodes(
-                nodes=combined_nodes,
-                query_bundle=query_bundle
-            )
-        except Exception as e:
-            # Fallback to standard ranking if Cohere fails (rate limits, key invalid, etc.)
-            print(f"Warning: Cohere reranking failed. Falling back to default scoring. Error: {str(e)}")
-            reranked_nodes = combined_nodes[:5]
+            # 1. Resolve storage contexts
+            course_dir = STORAGE_DIR / f"course_{course_id}"
+            docstore_path = course_dir / "docstore.json"
 
-        # 6. Map Child Hits to Parent Contexts
-        # Hierarchical strategy mapping: return the wider 512-token parent context when a child matches.
-        parent_nodes_with_score = []
-        for node_with_score in reranked_nodes:
-            node = node_with_score.node
-            parent_rel = node.relationships.get(NodeRelationship.PARENT)
-            
-            if parent_rel and docstore.document_exists(parent_rel.node_id):
-                parent_node = docstore.get_node(parent_rel.node_id)
-                # Keep score from reranking child, wrap the parent node in NodeWithScore
-                parent_nodes_with_score.append(
-                    NodeWithScore(
-                        node=parent_node,
-                        score=node_with_score.score
-                    )
+            if not docstore_path.exists():
+                raise FileNotFoundError(
+                    f"No database index records found for course '{course_id}'. "
+                    "Please run ingestion first to index the course resources."
                 )
-            else:
-                # If no parent relation exists or lookup fails, return the child chunk itself
-                parent_nodes_with_score.append(node_with_score)
 
-        return parent_nodes_with_score[:5]
+            # Load parent docstore
+            docstore = SimpleDocumentStore.from_persist_path(str(docstore_path))
+            all_nodes = list(docstore.docs.values())
+            child_nodes = [node for node in all_nodes if node.metadata.get("chunk_type") == "child"]
+
+            if not child_nodes:
+                return []
+
+            # 2. Dense Vector Retrieval (Pinecone)
+            vector_store = PineconeVectorStore(
+                pinecone_index=self.pinecone_index,
+                namespace=f"course_{course_id}"
+            )
+            index = VectorStoreIndex.from_vector_store(
+                vector_store,
+                embed_model=self.embed_model
+            )
+            # Fetch top 10 candidates from vector store
+            vector_retriever = index.as_retriever(similarity_top_k=10)
+            vector_results = vector_retriever.retrieve(query_str)
+
+            # 3. Sparse Keyword Retrieval (Local BM25)
+            # Build local BM25 index on child nodes loaded from local docstore
+            bm25_retriever = BM25Retriever.from_defaults(
+                nodes=child_nodes,
+                similarity_top_k=10
+            )
+            bm25_results = bm25_retriever.retrieve(query_str)
+
+            # 4. Combine and Deduplicate Results by Node ID
+            seen_ids = set()
+            combined_nodes = []
+            for node_with_score in vector_results + bm25_results:
+                node_id = node_with_score.node.node_id
+                if node_id not in seen_ids:
+                    seen_ids.add(node_id)
+                    combined_nodes.append(node_with_score)
+
+            if not combined_nodes:
+                return []
+
+            # 5. Cohere Reranking
+            query_bundle = QueryBundle(query_str)
+            try:
+                reranked_nodes = self.reranker.postprocess_nodes(
+                    nodes=combined_nodes,
+                    query_bundle=query_bundle
+                )
+            except Exception as e:
+                # Fallback to standard ranking if Cohere fails (rate limits, key invalid, etc.)
+                print(f"Warning: Cohere reranking failed. Falling back to default scoring. Error: {str(e)}")
+                reranked_nodes = combined_nodes[:5]
+
+            # 6. Map Child Hits to Parent Contexts
+            # Hierarchical strategy mapping: return the wider 512-token parent context when a child matches.
+            parent_nodes_with_score = []
+            for node_with_score in reranked_nodes:
+                node = node_with_score.node
+                parent_rel = node.relationships.get(NodeRelationship.PARENT)
+                
+                if parent_rel and docstore.document_exists(parent_rel.node_id):
+                    parent_node = docstore.get_node(parent_rel.node_id)
+                    # Keep score from reranking child, wrap the parent node in NodeWithScore
+                    parent_nodes_with_score.append(
+                        NodeWithScore(
+                            node=parent_node,
+                            score=node_with_score.score
+                        )
+                    )
+                else:
+                    # If no parent relation exists or lookup fails, return the child chunk itself
+                    parent_nodes_with_score.append(node_with_score)
+
+            return parent_nodes_with_score[:5]
+        finally:
+            LMS_RAG_RETRIEVAL_TIME.observe(time.time() - start_time)

@@ -49,6 +49,21 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# 2.1 Integrate Prometheus instrumentation
+from prometheus_fastapi_instrumentator import Instrumentator
+from app.core.metrics import LMS_ACTIVE_USERS
+
+Instrumentator().instrument(app).expose(app)
+
+@app.middleware("http")
+async def track_active_users_middleware(request: Request, call_next):
+    LMS_ACTIVE_USERS.inc()
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        LMS_ACTIVE_USERS.dec()
+
 # Bind slowapi limiter instance to app state
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
