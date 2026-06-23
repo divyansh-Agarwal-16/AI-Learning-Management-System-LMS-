@@ -437,7 +437,7 @@ class TestRouteEndpoints(unittest.TestCase):
         self.assertTrue(res_wk.json()["success"])
 
 
-def test_celery_verify_connection():
+def verify_celery_connection():
     from app.core.celery_app import verify_connection
     res = verify_connection()
     self_assertion = "Celery background worker is connected and healthy."

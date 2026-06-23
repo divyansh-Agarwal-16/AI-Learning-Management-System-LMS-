@@ -477,7 +477,7 @@ class AIService:
         lesson = lesson_res.scalar_one_or_none()
         
         if not lesson:
-            raise HTTPException(status_code=status.HTTP_444_NOT_FOUND, detail="Lesson not found.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found.")
             
         content_text = f"Lesson Title: {lesson.title}. Duration: {lesson.duration}."
         
