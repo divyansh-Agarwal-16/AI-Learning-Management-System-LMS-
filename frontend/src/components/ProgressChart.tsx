@@ -12,17 +12,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { day: "Mon", hours: 1.5 },
-  { day: "Tue", hours: 2.2 },
-  { day: "Wed", hours: 0.8 },
-  { day: "Thu", hours: 3.0 },
-  { day: "Fri", hours: 1.2 },
-  { day: "Sat", hours: 4.5 },
-  { day: "Sun", hours: 2.0 },
-];
+interface ProgressChartProps {
+  data?: { day: string; hours: number }[];
+}
 
-export default function ProgressChart() {
+export default function ProgressChart({ data = [] }: ProgressChartProps) {
   const [mounted, setMounted] = useState(false);
 
   // Avoid hydration mismatch by waiting until client-side mount

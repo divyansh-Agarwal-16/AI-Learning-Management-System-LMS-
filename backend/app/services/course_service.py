@@ -250,6 +250,28 @@ class CourseService:
         return result.scalars().first()
 
     @staticmethod
+    async def get_quiz_by_id(db: AsyncSession, quiz_id: uuid.UUID) -> Optional[Quiz]:
+        """Fetches a quiz by its primary key ID with questions loaded.
+
+        Args:
+            db (AsyncSession): Active database session.
+            quiz_id (uuid.UUID): Quiz UUID.
+
+        Returns:
+            Optional[Quiz]: The Quiz database object, if exists.
+        """
+        quiz_uuid = to_uuid(quiz_id)
+        if not quiz_uuid:
+            return None
+
+        result = await db.execute(
+            select(Quiz)
+            .where(Quiz.id == quiz_uuid)
+            .options(selectinload(Quiz.questions))
+        )
+        return result.scalars().first()
+
+    @staticmethod
     async def create_quiz(db: AsyncSession, course_id: uuid.UUID, title: str) -> Quiz:
         """Registers a practice Quiz module.
 
@@ -343,14 +365,15 @@ class CourseService:
         if not quiz:
             return None
 
-        # Build map of correct answers
-        correct_map = {q.id: q.correct_answer_idx for q in quiz.questions}
+        # Build map of questions
+        question_map = {q.id: q for q in quiz.questions}
         total_questions = len(quiz.questions)
-
+ 
         # Grade student answers
         score = 0
         answers_to_create = []
-
+        details_list = []
+ 
         # Create submission wrapper first
         submission = Submission(
             user_id=user_uuid,
@@ -360,14 +383,19 @@ class CourseService:
         )
         db.add(submission)
         await db.flush()  # Extract submission ID before child records are saved
-
+ 
         for ans in request.answers:
             ans_question_uuid = to_uuid(ans.question_id)
             if not ans_question_uuid:
                 continue
-
-            correct_idx = correct_map.get(ans_question_uuid)
-            if correct_idx is not None and ans.selected_option_idx == correct_idx:
+ 
+            question_obj = question_map.get(ans_question_uuid)
+            if not question_obj:
+                continue
+ 
+            correct_idx = question_obj.correct_answer_idx
+            is_correct = (ans.selected_option_idx == correct_idx)
+            if is_correct:
                 score += 1
             
             # Record individual answer transaction
@@ -377,12 +405,29 @@ class CourseService:
                 selected_option_idx=ans.selected_option_idx
             )
             answers_to_create.append(db_answer)
-
+ 
+            options = question_obj.options
+            correct_text = options[correct_idx] if 0 <= correct_idx < len(options) else "Unknown"
+            selected_text = options[ans.selected_option_idx] if 0 <= ans.selected_option_idx < len(options) else "Unknown"
+ 
+            details_list.append({
+                "question_id": ans_question_uuid,
+                "selected_option_idx": ans.selected_option_idx,
+                "correct_option_idx": correct_idx,
+                "is_correct": is_correct,
+                "question_text": question_obj.text,
+                "correct_answer_text": correct_text,
+                "selected_answer_text": selected_text
+            })
+ 
         # Save updates
         submission.score = score
         db.add_all(answers_to_create)
         await db.commit()
         await db.refresh(submission)
+        
+        # Attach details for Pydantic mapping
+        submission.details = details_list
         return submission
 
     @staticmethod

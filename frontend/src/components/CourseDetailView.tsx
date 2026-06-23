@@ -3,7 +3,10 @@
 
 import React, { useState, useEffect } from "react";
 import ReactPlayer from "react-player";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AIChatPanel } from "./AIChatPanel";
+import { ConceptMap } from "./ConceptMap";
+import { coursesApi, progressApi, quizzesApi } from "@/lib/api";
 
 const Player = ReactPlayer as unknown as React.ComponentType<{ url?: string; width?: string; height?: string; controls?: boolean }>;
 
@@ -38,32 +41,68 @@ export function CourseDetailView({ course }: CourseDetailViewProps) {
   const [currentLessonIdx, setCurrentLessonIdx] = useState(0);
   const [activeTab, setActiveTab] = useState("Overview");
   const [isClient, setIsClient] = useState(false);
-  const [quizScore, setQuizScore] = useState<number | null>(null);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
+  const [externalPrompt, setExternalPrompt] = useState<{ text: string; timestamp: number } | null>(null);
+
+  const queryClient = useQueryClient();
+
+  // Query Course details dynamically with user-specific progress preloaded
+  const { data: courseData } = useQuery<any>({
+    queryKey: ["course", course.id],
+    queryFn: async () => {
+      const res = await coursesApi.getCourse(course.id);
+      return res.data;
+    },
+    initialData: course as any,
+  });
+
+  // Query Course Quiz details
+  const { data: quizRes } = useQuery({
+    queryKey: ["courseQuiz", course.id],
+    queryFn: () => quizzesApi.getQuizByCourse(course.id),
+    enabled: !!course.id,
+  });
+  const quiz = quizRes?.data;
+
+  // Mutation for updating lesson completion optimistically
+  const toggleProgressMutation = useMutation({
+    mutationFn: ({ lessonId, completed }: { lessonId: string; completed: boolean }) =>
+      progressApi.updateProgress(lessonId, completed, 0),
+    onMutate: async ({ lessonId, completed }) => {
+      await queryClient.cancelQueries({ queryKey: ["course", course.id] });
+      const previousCourse = queryClient.getQueryData<any>(["course", course.id]);
+
+      if (previousCourse) {
+        queryClient.setQueryData(["course", course.id], {
+          ...previousCourse,
+          lessons: previousCourse.lessons.map((l: any) =>
+            l.id === lessonId ? { ...l, completed } : l
+          ),
+        });
+      }
+
+      return { previousCourse };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousCourse) {
+        queryClient.setQueryData(["course", course.id], context.previousCourse);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["course", course.id] });
+      queryClient.invalidateQueries({ queryKey: ["weeklyProgress"] });
+      queryClient.invalidateQueries({ queryKey: ["enrolledCourses"] });
+    },
+  });
 
   // Ensure client-side mounting before loading ReactPlayer
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  const currentLesson = course.lessons[currentLessonIdx] || course.lessons[0];
+  const currentLesson = courseData.lessons?.[currentLessonIdx] || courseData.lessons?.[0] || course.lessons[0];
 
-  const handleQuizSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    let score = 0;
-    course.quiz.forEach((q, idx) => {
-      if (selectedAnswers[idx] === q.answer) {
-        score += 1;
-      }
-    });
-    setQuizScore(score);
-  };
-
-  const handleOptionChange = (questionIdx: number, optionIdx: number) => {
-    setSelectedAnswers({
-      ...selectedAnswers,
-      [questionIdx]: optionIdx,
-    });
+  const handleToggleComplete = (lessonId: string, completed: boolean) => {
+    toggleProgressMutation.mutate({ lessonId, completed });
   };
 
   return (
@@ -74,13 +113,11 @@ export function CourseDetailView({ course }: CourseDetailViewProps) {
         <div className="p-4 bg-slate-900/40 border border-slate-900 rounded-xl">
           <h3 className="font-bold text-slate-200 text-sm mb-4">Lessons</h3>
           <div className="space-y-2">
-            {course.lessons.map((lesson, idx) => (
+            {courseData.lessons?.map((lesson: any, idx: number) => (
               <button
                 key={lesson.id}
                 onClick={() => {
                   setCurrentLessonIdx(idx);
-                  setQuizScore(null);
-                  setSelectedAnswers({});
                 }}
                 className={`w-full text-left p-3 rounded-lg flex items-center justify-between text-xs transition-colors border ${
                   idx === currentLessonIdx
@@ -92,13 +129,22 @@ export function CourseDetailView({ course }: CourseDetailViewProps) {
                   <span className="text-slate-500 font-bold">{idx + 1}.</span>
                   <span className="truncate">{lesson.title}</span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-3 shrink-0">
                   <span className="text-[10px] text-slate-500">{lesson.duration}</span>
-                  {lesson.completed ? (
-                    <span className="text-emerald-500 font-bold">✓</span>
-                  ) : (
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-700" />
-                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleComplete(lesson.id, !lesson.completed);
+                    }}
+                    className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                      lesson.completed
+                        ? "bg-emerald-500 border-emerald-500 text-white font-bold"
+                        : "border-slate-700 hover:border-slate-500 bg-slate-950 text-transparent"
+                    }`}
+                  >
+                    <span className="text-[9px]">✓</span>
+                  </button>
                 </div>
               </button>
             ))}
@@ -144,12 +190,12 @@ export function CourseDetailView({ course }: CourseDetailViewProps) {
 
         {/* Dynamic Tabs Block */}
         <div className="p-6 bg-slate-900/40 border border-slate-900 rounded-2xl space-y-6">
-          <div className="flex border-b border-slate-900 gap-6">
-            {["Overview", "Notes", "Quiz", "Discussion"].map((tab) => (
+          <div className="flex border-b border-slate-900 gap-6 overflow-x-auto pb-1">
+            {["Overview", "Notes", "Concept Map", "Quiz", "Discussion"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`pb-3 text-sm font-semibold transition-all relative ${
+                className={`pb-3 text-sm font-semibold transition-all relative whitespace-nowrap ${
                   activeTab === tab 
                     ? "text-indigo-400" 
                     : "text-slate-400 hover:text-slate-200"
@@ -167,10 +213,10 @@ export function CourseDetailView({ course }: CourseDetailViewProps) {
             {activeTab === "Overview" && (
               <div className="space-y-2">
                 <h4 className="font-bold text-slate-200 text-base">About this Lesson</h4>
-                <p>{course.overview}</p>
+                <p>{courseData.description || course.overview}</p>
                 <div className="pt-2">
                   <h5 className="font-bold text-slate-300 text-xs uppercase tracking-wider mb-1">Course Description</h5>
-                  <p className="text-xs text-slate-400">{course.description}</p>
+                  <p className="text-xs text-slate-400">{courseData.description || course.description}</p>
                 </div>
               </div>
             )}
@@ -184,59 +230,38 @@ export function CourseDetailView({ course }: CourseDetailViewProps) {
               </div>
             )}
 
-            {activeTab === "Quiz" && (
-              <form onSubmit={handleQuizSubmit} className="space-y-6">
-                <h4 className="font-bold text-slate-200 text-base">Practice Quiz</h4>
-                {course.quiz.map((item, qIdx) => (
-                  <div key={qIdx} className="space-y-3 p-4 bg-slate-950/60 border border-slate-900 rounded-xl">
-                    <p className="font-medium text-slate-200 text-xs">
-                      {qIdx + 1}. {item.question}
-                    </p>
-                    <div className="grid grid-cols-1 gap-2">
-                      {item.options.map((opt, oIdx) => (
-                        <label
-                          key={oIdx}
-                          className={`flex items-center gap-3 p-3 rounded-lg border text-xs cursor-pointer transition-colors ${
-                            selectedAnswers[qIdx] === oIdx
-                              ? "border-indigo-500 bg-indigo-500/5 text-indigo-400"
-                              : "border-slate-800 bg-slate-950 hover:bg-slate-900"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name={`question-${qIdx}`}
-                            checked={selectedAnswers[qIdx] === oIdx}
-                            onChange={() => handleOptionChange(qIdx, oIdx)}
-                            className="text-indigo-600 focus:ring-indigo-500 border-slate-800 bg-slate-950"
-                          />
-                          <span>{opt}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            {activeTab === "Concept Map" && (
+              <ConceptMap
+                topic={courseData.title}
+                onExplainConcept={(conceptLabel) => {
+                  setExternalPrompt({
+                    text: `Explain the concept: ${conceptLabel}`,
+                    timestamp: Date.now(),
+                  });
+                }}
+              />
+            )}
 
-                {quizScore !== null ? (
-                  <div className="p-4 bg-indigo-950/20 border border-indigo-950 rounded-xl flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-white text-sm">Quiz Results</div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        You scored {quizScore} out of {course.quiz.length} correctly.
-                      </div>
-                    </div>
-                    <span className="text-xl font-extrabold text-indigo-400">
-                      {Math.round((quizScore / course.quiz.length) * 100)}%
-                    </span>
+            {activeTab === "Quiz" && (
+              <div className="space-y-6 text-center py-8 bg-slate-950/60 border border-slate-900 rounded-xl p-6">
+                <span className="text-4xl block">📝</span>
+                <h4 className="font-bold text-slate-200 text-base">Course Practice Quiz</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Evaluate your learning retention with this module&apos;s custom questions graded by your personal AI Tutor.
+                </p>
+                {quiz ? (
+                  <div className="pt-4">
+                    <a
+                      href={`/quiz/${quiz.id}`}
+                      className="inline-block px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-colors shadow shadow-indigo-500/10"
+                    >
+                      Start Practice Quiz
+                    </a>
                   </div>
                 ) : (
-                  <button
-                    type="submit"
-                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-colors shadow shadow-indigo-500/10"
-                  >
-                    Submit Answers
-                  </button>
+                  <p className="text-xs text-slate-500 pt-2">No practice quiz available for this course yet.</p>
                 )}
-              </form>
+              </div>
             )}
 
             {activeTab === "Discussion" && (
@@ -274,7 +299,7 @@ export function CourseDetailView({ course }: CourseDetailViewProps) {
 
       {/* 3. Right Sidebar: AI Chat Panel */}
       <div className="lg:col-span-1 h-[550px]">
-        <AIChatPanel courseId={course.id} />
+        <AIChatPanel courseId={course.id} externalPrompt={externalPrompt} />
       </div>
 
     </div>

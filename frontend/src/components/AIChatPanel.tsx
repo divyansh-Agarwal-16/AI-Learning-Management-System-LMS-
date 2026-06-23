@@ -1,41 +1,45 @@
-// This component implements the streaming AI chat interface for courses, using the Vercel AI SDK to display responses and suggestion chips.
+// This component implements the custom SSE streaming AI chat interface for courses, displaying real-time replies, suggestions, and specialized agent badges.
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import { useChat, UIMessage } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { getSession } from "next-auth/react";
+import Link from "next/link";
 
 interface AIChatPanelProps {
   courseId: string;
+  externalPrompt?: { text: string; timestamp: number } | null;
 }
 
-export function AIChatPanel({ courseId }: AIChatPanelProps) {
-  const [input, setInput] = useState("");
-  
-  // Use Vercel AI SDK useChat hook. Sends requests to /api/chat with courseId metadata.
-  const { messages, sendMessage, status } = useChat<UIMessage>({
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      body: { courseId },
-    }),
-    messages: [
-      {
-        id: "welcome",
-        role: "assistant",
-        parts: [
-          {
-            type: "text",
-            text: "Hi! I am your AI Tutor. I have access to the LlamaIndex RAG pipeline for this course. What would you like to learn or clarify today?",
-          },
-        ],
-      },
-    ],
-  });
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  parts: { type: "text" | "reasoning"; text: string }[];
+  agent?: string;
+}
 
-  const isLoading = status === "submitted" || status === "streaming";
+export function AIChatPanel({ courseId, externalPrompt }: AIChatPanelProps) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      parts: [
+        {
+          type: "text",
+          text: "Hi! I am your AI Tutor. I have access to the LlamaIndex RAG pipeline for this course. What would you like to learn or clarify today?",
+        },
+      ],
+    },
+  ]);
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentAgent, setCurrentAgent] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [interruptData, setInterruptData] = useState<any>(null);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom of chat when messages update or loading state changes
+  // Auto-scroll to bottom of chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
@@ -46,27 +50,153 @@ export function AIChatPanel({ courseId }: AIChatPanelProps) {
     "What are the main key takeaways?",
   ];
 
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return;
+
+    setIsLoading(true);
+    setConnectionError(null);
+    setCurrentAgent("orchestrator");
+    setInterruptData(null);
+
+    // Append user message
+    const userMsg: ChatMessage = {
+      id: Math.random().toString(),
+      role: "user",
+      parts: [{ type: "text", text }],
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    try {
+      const session = await getSession();
+      const token = session ? (session.user as any).accessToken : (typeof window !== "undefined" ? localStorage.getItem("accessToken") : null);
+      
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const res = await fetch(`${apiBaseUrl}/ai/chat?course_id=${courseId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token || ""}`,
+        },
+        body: JSON.stringify({ message: text }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Chat request failed with status: ${res.status}`);
+      }
+
+      // Initialize empty assistant message
+      const assistantMsg: ChatMessage = {
+        id: Math.random().toString(),
+        role: "assistant",
+        parts: [{ type: "text", text: "" }],
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      // Read SSE stream
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      if (!reader) {
+        throw new Error("Response body is not readable");
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const cleanLine = line.trim();
+          if (cleanLine.startsWith("data: ")) {
+            const dataStr = cleanLine.slice(6).trim();
+            if (!dataStr) continue;
+            try {
+              const payload = JSON.parse(dataStr);
+              if (payload.type === "token") {
+                setMessages((prev) => {
+                  const list = [...prev];
+                  const last = list[list.length - 1];
+                  if (last && last.role === "assistant") {
+                    const textPart = last.parts[0];
+                    if (textPart) {
+                      textPart.text += payload.content;
+                    }
+                  }
+                  return list;
+                });
+              } else if (payload.type === "agent_start") {
+                setCurrentAgent(payload.agent);
+              } else if (payload.type === "agent_end") {
+                // Keep the active agent tracker or reset on end
+              } else if (payload.type === "interrupt") {
+                setInterruptData(payload.quiz_data);
+              } else if (payload.type === "error") {
+                setConnectionError(payload.content);
+              }
+            } catch {
+              // Ignore parse errors on partial streams
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error("SSE stream error:", err);
+      setConnectionError(err.message || "Unable to establish connection to AI Tutor.");
+    } finally {
+      setIsLoading(false);
+      setCurrentAgent(null);
+    }
+  };
+
+  // Watch for external prompts (like concept map node clicks)
+  useEffect(() => {
+    if (externalPrompt?.text) {
+      handleSendMessage(externalPrompt.text);
+    }
+  }, [externalPrompt]);
+
   const handleSuggestionClick = (suggestion: string) => {
-    sendMessage({ text: suggestion });
+    handleSendMessage(suggestion);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
-    sendMessage({ text: input });
+    if (!input.trim() || isLoading) return;
+    handleSendMessage(input);
     setInput("");
   };
 
+  // Map backend agent codes to beautiful display labels & styles
+  const getAgentBadge = (agentCode: string | null) => {
+    if (!agentCode) return null;
+    switch (agentCode.toLowerCase()) {
+      case "tutor":
+        return <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-semibold">Tutor Agent</span>;
+      case "quiz_generator":
+        return <span className="text-[10px] px-2 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full font-semibold">Quiz Agent</span>;
+      case "path_advisor":
+        return <span className="text-[10px] px-2 py-0.5 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-full font-semibold">Path Advisor</span>;
+      case "orchestrator":
+        return <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-300 border border-slate-700 rounded-full font-semibold">Orchestrator</span>;
+      default:
+        return <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-300 border border-slate-700 rounded-full font-semibold">{agentCode}</span>;
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full bg-slate-900/40 border border-slate-900 rounded-xl text-slate-100 font-sans">
+    <div className="flex flex-col h-full bg-slate-900/40 border border-slate-900 rounded-xl text-slate-100 font-sans shadow-lg">
       
       {/* Panel Header */}
       <div className="p-4 border-b border-slate-900 flex items-center justify-between bg-slate-950/40 rounded-t-xl">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className={`w-2.5 h-2.5 rounded-full ${isLoading ? "bg-indigo-500 animate-ping" : "bg-emerald-500"}`} />
           <h3 className="font-semibold text-slate-200 text-sm">Personal AI Tutor</h3>
         </div>
-        <span className="text-[10px] text-slate-500 uppercase tracking-widest">Course ID: {courseId}</span>
+        {isLoading ? getAgentBadge(currentAgent) : <span className="text-[10px] text-slate-500 uppercase tracking-wider">Active</span>}
       </div>
 
       {/* Message List */}
@@ -93,9 +223,6 @@ export function AIChatPanel({ courseId }: AIChatPanelProps) {
                     if (part.type === "text") {
                       return <span key={pIdx}>{part.text}</span>;
                     }
-                    if (part.type === "reasoning") {
-                      return <span key={pIdx} className="text-slate-500 italic">{part.text}</span>;
-                    }
                     return null;
                   })}
                 </div>
@@ -104,8 +231,35 @@ export function AIChatPanel({ courseId }: AIChatPanelProps) {
           );
         })}
 
+        {/* Connection Error Alert */}
+        {connectionError && (
+          <div className="p-3 bg-red-900/20 border border-red-900/50 text-red-200 text-xs rounded-lg">
+            ⚠️ {connectionError}
+          </div>
+        )}
+
+        {/* Interrupt/Human-in-the-loop Notification */}
+        {interruptData && (
+          <div className="p-4 bg-indigo-950/40 border border-indigo-500/30 rounded-xl space-y-3">
+            <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+              <span>📋</span> Practice Quiz Ready for Review
+            </div>
+            <p className="text-[11px] text-slate-400">
+              The AI Tutor has generated a custom quiz on this topic. Do you want to take it?
+            </p>
+            <div className="flex gap-2">
+              <Link 
+                href={`/quiz/${interruptData.id || "generated"}`}
+                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[11px] font-semibold transition-colors"
+              >
+                Start Quiz
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Loading skeleton */}
-        {isLoading && (
+        {isLoading && !messages[messages.length - 1]?.parts[0]?.text && (
           <div className="flex justify-start">
             <div className="max-w-[85%] rounded-xl px-4 py-2.5 bg-slate-950/80 border border-slate-800 text-slate-300 rounded-bl-none shadow space-y-2 w-2/3">
               <div className="font-semibold text-[10px] opacity-75">AI Tutor</div>
@@ -144,8 +298,9 @@ export function AIChatPanel({ courseId }: AIChatPanelProps) {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question..."
-            className="flex-1 min-w-0 px-3.5 py-2 border border-slate-800 rounded-lg bg-slate-950 placeholder-slate-600 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            disabled={isLoading}
+            placeholder={isLoading ? "AI Tutor is processing..." : "Ask a question..."}
+            className="flex-1 min-w-0 px-3.5 py-2 border border-slate-800 rounded-lg bg-slate-950 placeholder-slate-600 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
           />
           <button
             type="submit"

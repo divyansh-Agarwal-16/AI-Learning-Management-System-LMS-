@@ -39,6 +39,7 @@ class LessonResponse(BaseModel):
         videoUrl (Optional[str]): Video link.
         pdfUrl (Optional[str]): Document link.
         order (int): Index number.
+        completed (bool): User-specific completion status indicator.
     """
     id: uuid.UUID
     course_id: uuid.UUID
@@ -47,6 +48,7 @@ class LessonResponse(BaseModel):
     videoUrl: Optional[str] = None
     pdfUrl: Optional[str] = None
     order: int
+    completed: bool = False
 
     model_config = {"from_attributes": True}
 

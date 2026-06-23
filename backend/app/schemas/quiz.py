@@ -62,6 +62,19 @@ class SubmitQuizRequest(BaseModel):
     answers: List[SubmitAnswerRequest] = Field(..., description="List of submitted answer choices")
 
 
+class SubmissionDetailItem(BaseModel):
+    """Schema representing grading details of one question in a submission."""
+    question_id: uuid.UUID
+    selected_option_idx: int
+    correct_option_idx: int
+    is_correct: bool
+    question_text: str
+    correct_answer_text: str
+    selected_answer_text: str
+
+    model_config = {"from_attributes": True}
+
+
 class SubmissionResponse(BaseModel):
     """Schema representing graded submission details.
 
@@ -71,11 +84,13 @@ class SubmissionResponse(BaseModel):
         score (int): Total correct answers.
         total_questions (int): Graded questions count.
         submitted_at (datetime): Gradation timestamp.
+        details (List[SubmissionDetailItem]): Grading details for each question.
     """
     id: uuid.UUID
     quiz_id: uuid.UUID
     score: int
     total_questions: int
     submitted_at: datetime
+    details: List[SubmissionDetailItem] = []
 
     model_config = {"from_attributes": True}

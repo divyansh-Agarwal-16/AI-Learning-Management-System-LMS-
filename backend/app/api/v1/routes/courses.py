@@ -45,18 +45,61 @@ async def list_courses(
     )
 
 
+@router.get("/enrolled", response_model=ApiResponse[List[dict]])
+async def get_enrolled_courses(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieves list of courses the authenticated user is currently enrolled in, with progress percentage."""
+    logger.info("enrolled_courses_requested", user_id=current_user.id)
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import select
+    from app.models.progress import CourseProgress
+    
+    stmt = select(CourseProgress).where(
+        CourseProgress.user_id == current_user.id
+    ).options(selectinload(CourseProgress.course))
+    
+    result = await db.execute(stmt)
+    progress_records = result.scalars().all()
+    
+    enrolled_courses = []
+    for pr in progress_records:
+        if pr.course and not pr.course.is_deleted:
+            enrolled_courses.append({
+                "id": str(pr.course.id),
+                "title": pr.course.title,
+                "description": pr.course.description,
+                "difficulty": pr.course.difficulty,
+                "duration": pr.course.duration,
+                "progress": pr.percentage,
+                "lastActive": "Recently"
+            })
+            
+    return ApiResponse(
+        success=True,
+        data=enrolled_courses,
+        message="Enrolled courses fetched successfully"
+    )
+
+
 @router.get("/{course_id}", response_model=ApiResponse[CourseResponse])
-async def get_course(course_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_course(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Retrieves detailed information and lessons for a specific course.
 
     Args:
         course_id (uuid.UUID): UUID identifier key.
         db (AsyncSession): Active database session.
+        current_user (User): Authenticated user session.
 
     Returns:
         ApiResponse[CourseResponse]: Standardized course details response.
     """
-    logger.info("course_details_requested", course_id=course_id)
+    logger.info("course_details_requested", course_id=course_id, user_id=current_user.id)
     course = await CourseService.get_course_by_id(db, course_id)
     if not course:
         logger.warning("course_details_not_found", course_id=course_id)
@@ -64,9 +107,29 @@ async def get_course(course_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Course with ID '{course_id}' not found"
         )
+    
+    # Query user's lesson progress to populate completion state
+    from app.models.progress import LessonProgress
+    from sqlalchemy import select
+    
+    lesson_ids = [l.id for l in course.lessons]
+    completed_lesson_ids = set()
+    if lesson_ids:
+        progress_stmt = select(LessonProgress.lesson_id).where(
+            LessonProgress.user_id == current_user.id,
+            LessonProgress.lesson_id.in_(lesson_ids),
+            LessonProgress.completed == True
+        )
+        progress_res = await db.execute(progress_stmt)
+        completed_lesson_ids = set(progress_res.scalars().all())
+
+    course_data = CourseResponse.model_validate(course)
+    for lesson in course_data.lessons:
+        lesson.completed = lesson.id in completed_lesson_ids
+
     return ApiResponse(
         success=True,
-        data=CourseResponse.model_validate(course),
+        data=course_data,
         message="Course details fetched successfully"
     )
 

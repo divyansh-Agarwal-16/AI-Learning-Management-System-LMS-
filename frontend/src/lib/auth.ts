@@ -16,19 +16,59 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // Mock authentication validation
-        if (credentials?.email && credentials?.password) {
-          if (credentials.email === "error@example.com") {
-            return null; // Mock authentication failure
-          }
-          // On signup/login mock, return user data
-          return {
-            id: "1",
-            name: "Demo User",
-            email: credentials.email,
-          };
+        if (!credentials?.email || !credentials?.password) {
+          return null;
         }
-        return null;
+        try {
+          const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+          
+          // 1. Authenticate with FastAPI Backend
+          const res = await fetch(`${apiBaseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password,
+            }),
+          });
+          
+          const loginData = await res.json();
+          if (!res.ok || !loginData.success) {
+            return null;
+          }
+          
+          const { access_token, refresh_token } = loginData.data;
+          
+          // 2. Fetch User Profile for display name
+          const profileRes = await fetch(`${apiBaseUrl}/users/profile`, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${access_token}`,
+            },
+          });
+          
+          let name = credentials.email.split("@")[0];
+          let userId = credentials.email;
+          
+          if (profileRes.ok) {
+            const profileData = await profileRes.json();
+            if (profileData.success) {
+              userId = profileData.data.id;
+              name = profileData.data.profile?.full_name || name;
+            }
+          }
+          
+          return {
+            id: userId,
+            email: credentials.email,
+            name: name,
+            accessToken: access_token,
+            refreshToken: refresh_token,
+          };
+        } catch (err) {
+          console.error("Authorize error:", err);
+          return null;
+        }
       },
     }),
   ],
@@ -40,13 +80,21 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.accessToken = (user as any).accessToken;
+        token.refreshToken = (user as any).refreshToken;
+        token.name = user.name;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        const user = session.user as unknown as { id: string; name?: string | null; email?: string | null; image?: string | null };
+        const user = session.user as any;
         user.id = token.id as string;
+        user.accessToken = token.accessToken as string;
+        user.refreshToken = token.refreshToken as string;
+        if (token.name) {
+          user.name = token.name as string;
+        }
       }
       return session;
     },

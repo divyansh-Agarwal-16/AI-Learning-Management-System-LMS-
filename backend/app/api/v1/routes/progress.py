@@ -67,6 +67,46 @@ async def track_lesson(
     )
 
 
+@router.get("/weekly", response_model=ApiResponse[list])
+async def get_weekly_progress(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieves cumulative study hours per day for the last 7 days."""
+    logger.info("weekly_progress_requested", user_id=current_user.id)
+    from sqlalchemy import select
+    from datetime import datetime, timedelta, timezone
+    from app.models.progress import LessonProgress
+    
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    stmt = select(LessonProgress).where(
+        LessonProgress.user_id == current_user.id,
+        LessonProgress.updated_at >= seven_days_ago
+    )
+    result = await db.execute(stmt)
+    progress_records = result.scalars().all()
+    
+    days_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    daily_seconds = {d: 0 for d in days_order}
+    
+    for record in progress_records:
+        if record.updated_at:
+            day_name = record.updated_at.strftime("%a")
+            if day_name in daily_seconds:
+                daily_seconds[day_name] += record.time_spent
+                
+    weekly_data = [
+        {"day": d, "hours": round(daily_seconds[d] / 3600.0, 1)}
+        for d in days_order
+    ]
+    
+    return ApiResponse(
+        success=True,
+        data=weekly_data,
+        message="Weekly progress fetched successfully"
+    )
+
+
 @router.get("/courses/{course_id}", response_model=ApiResponse[CourseProgressResponse])
 async def get_course_progress(
     course_id: uuid.UUID,

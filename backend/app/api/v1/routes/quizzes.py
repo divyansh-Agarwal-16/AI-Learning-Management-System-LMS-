@@ -46,6 +46,32 @@ async def get_quiz(course_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     )
 
 
+@router.get("/quizzes/{quiz_id}", response_model=ApiResponse[QuizResponse])
+async def get_quiz_by_id(quiz_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Retrieves practice quiz details and questions by quiz ID.
+
+    Args:
+        quiz_id (uuid.UUID): Quiz UUID.
+        db (AsyncSession): Active database session.
+
+    Returns:
+        ApiResponse[QuizResponse]: Standardized quiz response.
+    """
+    logger.info("quiz_by_id_requested", quiz_id=quiz_id)
+    quiz = await CourseService.get_quiz_by_id(db, quiz_id)
+    if not quiz:
+        logger.warning("quiz_by_id_not_found", quiz_id=quiz_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Quiz with ID '{quiz_id}' not found"
+        )
+    return ApiResponse(
+        success=True,
+        data=QuizResponse.model_validate(quiz),
+        message="Quiz questions loaded successfully"
+    )
+
+
 @router.post("/quizzes/{quiz_id}/submit", response_model=ApiResponse[SubmissionResponse])
 async def submit_quiz(
     quiz_id: uuid.UUID,
